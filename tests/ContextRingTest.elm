@@ -151,6 +151,26 @@ openTests =
                 builtWithOneBrick
                     |> send (StudioMsg (Core.SelectOnly 0))
                     |> (\m -> Expect.equal Nothing m.ringPart)
+        , test "opening the ring on a part already in multi-selection preserves multi-selection" <|
+            \_ ->
+                let
+                    m =
+                        builtWithTwoBricks
+
+                    s =
+                        m.studio
+
+                    withTwo =
+                        { m | studio = { s | selection = Set.fromList [ 0, 1 ] } }
+
+                    opened =
+                        send (OpenRing 0) withTwo
+                in
+                Expect.all
+                    [ \_ -> Expect.equal (Just 0) opened.ringPart
+                    , \_ -> Expect.equal (Set.fromList [ 0, 1 ]) opened.studio.selection
+                    ]
+                    ()
         ]
 
 
@@ -190,6 +210,20 @@ closeTests =
                 openRing builtWithOneBrick
                     |> send (StudioMsg (Core.SelectOnly 0))
                     |> (\m -> Expect.equal (Just 0) m.ringPart)
+        , test "multi-selection containing the ring part keeps the ring open" <|
+            \_ ->
+                let
+                    opened =
+                        openRing builtWithTwoBricks
+
+                    s =
+                        opened.studio
+
+                    multi =
+                        send (StudioMsg (Core.ViewportMsg (Viewport.TouchEnd [])))
+                            { opened | studio = { s | selection = Set.fromList [ 0, 1 ] } }
+                in
+                Expect.equal (Just 0) multi.ringPart
         , test "starting to drag the part closes it" <|
             \_ ->
                 let
@@ -356,6 +390,11 @@ ringTests =
                     , free = True
                     , glued = False
                     , movable = True
+                    , canCut = False
+                    , canCopy = False
+                    , canPaste = False
+                    , canGroup = False
+                    , canUngroup = False
                     , step = Step.Stud
                     , coarsePointer = False
                     , onTurn = \_ -> NoOp
@@ -363,6 +402,11 @@ ringTests =
                     , onLower = NoOp
                     , onDelete = NoOp
                     , onGlue = NoOp
+                    , onCut = NoOp
+                    , onCopy = NoOp
+                    , onPaste = NoOp
+                    , onGroup = NoOp
+                    , onUngroup = NoOp
                     , onMove = \_ -> NoOp
                     , onStep = \_ -> NoOp
                     , noOp = NoOp
@@ -474,6 +518,109 @@ ringTests =
                     , \_ -> ring |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Move left (A)") ] |> Query.has [ Selector.tag "svg" ]
                     , \_ -> ring |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Move toward (S)") ] |> Query.has [ Selector.tag "svg" ]
                     , \_ -> ring |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Move right (D)") ] |> Query.has [ Selector.tag "svg" ]
+                    ]
+                    ()
+        , test "mobile toolbar Cut button sends Cut when clicked" <|
+            \_ ->
+                send (WindowResized 375 667) builtWithOneBrick
+                    |> openRing
+                    |> view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Cut") ]
+                    |> Event.simulate Event.click
+                    |> Event.expect Cut
+        , test "mobile toolbar Copy button sends Copy when clicked" <|
+            \_ ->
+                send (WindowResized 375 667) builtWithOneBrick
+                    |> openRing
+                    |> view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Copy") ]
+                    |> Event.simulate Event.click
+                    |> Event.expect Copy
+        , test "mobile toolbar Paste button sends Paste when clicked" <|
+            \_ ->
+                send (WindowResized 375 667) builtWithOneBrick
+                    |> send Copy
+                    |> openRing
+                    |> view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Paste") ]
+                    |> Event.simulate Event.click
+                    |> Event.expect Paste
+        , test "mobile toolbar Group button appears on multi-selection and sends Group" <|
+            \_ ->
+                let
+                    base =
+                        send (WindowResized 375 667) builtWithTwoBricks
+
+                    s =
+                        base.studio
+
+                    multi =
+                        openRing { base | studio = { s | selection = Set.fromList [ 0, 1 ] } }
+                            |> view
+                            |> Query.fromHtml
+                in
+                Expect.all
+                    [ \_ ->
+                        multi
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
+                            |> Query.count (Expect.equal 1)
+                    , \_ ->
+                        multi
+                            |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect Group
+                    ]
+                    ()
+        , test "mobile toolbar does not show Group or Ungroup on single regular part" <|
+            \_ ->
+                let
+                    single =
+                        send (WindowResized 375 667) builtWithOneBrick
+                            |> openRing
+                            |> view
+                            |> Query.fromHtml
+                in
+                Expect.all
+                    [ \_ ->
+                        single
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
+                            |> Query.count (Expect.equal 0)
+                    , \_ ->
+                        single
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Ungroup") ]
+                            |> Query.count (Expect.equal 0)
+                    ]
+                    ()
+        , test "mobile toolbar Ungroup button appears on submodel and sends Ungroup" <|
+            \_ ->
+                let
+                    base =
+                        send (WindowResized 375 667) builtWithTwoBricks
+
+                    s =
+                        base.studio
+
+                    grouped =
+                        send Group { base | studio = { s | selection = Set.fromList [ 0, 1 ] } }
+
+                    opened =
+                        send (OpenRing 2) grouped
+                            |> view
+                            |> Query.fromHtml
+                in
+                Expect.all
+                    [ \_ ->
+                        opened
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Ungroup") ]
+                            |> Query.count (Expect.equal 1)
+                    , \_ ->
+                        opened
+                            |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Ungroup") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect Ungroup
                     ]
                     ()
         ]

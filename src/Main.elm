@@ -270,6 +270,11 @@ type Msg
     | Undo
     | Redo
     | Delete
+    | Cut
+    | Copy
+    | Paste
+    | Group
+    | Ungroup
     | TurnSelection TurnDirection
     | RaiseSelection
     | LowerSelection
@@ -989,7 +994,7 @@ ringClosed model =
     in
     case clearedTap.ringPart of
         Just id ->
-            if clearedTap.tidyOpen || clearedTap.menuOpen || partDragged clearedTap || Set.toList clearedTap.studio.selection /= [ id ] then
+            if clearedTap.tidyOpen || clearedTap.menuOpen || partDragged clearedTap || not (Set.member id clearedTap.studio.selection) then
                 { clearedTap | ringPart = Nothing }
 
             else
@@ -1230,6 +1235,21 @@ step msg model =
 
         Delete ->
             runCore Core.deleteSelection model
+
+        Cut ->
+            runCore Core.cutSelection model
+
+        Copy ->
+            runCore (\s -> ( Core.copySelection s, Cmd.none, [] )) model
+
+        Paste ->
+            runCore Core.pasteClipboard model
+
+        Group ->
+            runCore Core.groupSelection model
+
+        Ungroup ->
+            runCore Core.explodeSelection model
 
         TurnSelection direction ->
             runCore (Core.turnSelected direction) model
@@ -1613,7 +1633,11 @@ openRing id model =
     if List.any (\p -> p.id == id) (Core.getPlacements model.studio) then
         let
             ( studio, studioCmd, events ) =
-                Core.update (Core.SelectOnly id) model.studio
+                if Set.member id model.studio.selection then
+                    ( model.studio, Cmd.none, [] )
+
+                else
+                    Core.update (Core.SelectOnly id) model.studio
         in
         ( { model
             | studio = studio
@@ -1705,21 +1729,34 @@ behind the eye.
 -}
 partScreenRect : Model -> Int -> Maybe Ring.Rect
 partScreenRect model id =
-    case List.filter (\p -> p.id == id) (Core.getPlacements model.studio) of
-        placed :: _ ->
-            let
-                corners =
-                    boxCorners (Core.partBox placed.part model.studio)
-                        |> List.map (\corner -> Gizmo.toRender (Mat4.transform placed.matrix corner))
-            in
-            Ring.screenRect
-                model.studio.viewport.camera
-                model.studio.viewport.width
-                model.studio.viewport.height
-                corners
+    let
+        selectedIds =
+            if Set.member id model.studio.selection then
+                model.studio.selection
 
-        [] ->
-            Nothing
+            else
+                Set.singleton id
+
+        placements =
+            Core.getPlacements model.studio
+                |> List.filter (\p -> Set.member p.id selectedIds)
+
+        cornersFor placed =
+            boxCorners (Core.partBox placed.part model.studio)
+                |> List.map (\corner -> Gizmo.toRender (Mat4.transform placed.matrix corner))
+
+        allCorners =
+            List.concatMap cornersFor placements
+    in
+    if List.isEmpty placements then
+        Nothing
+
+    else
+        Ring.screenRect
+            model.studio.viewport.camera
+            model.studio.viewport.width
+            model.studio.viewport.height
+            allCorners
 
 
 {-| The eight corners of a part's local box (LDraw).
@@ -2933,6 +2970,11 @@ ringConfig model id =
     , free = model.free
     , glued = Core.selectionGlued model.studio
     , movable = Core.selectionMovable model.studio
+    , canCut = Core.selectionMovable model.studio && Core.hasSelection model.studio
+    , canCopy = Core.hasSelection model.studio
+    , canPaste = Core.hasClipboard model.studio
+    , canGroup = Core.canGroup model.studio
+    , canUngroup = Core.canUngroup model.studio
     , step = model.stepSize
     , coarsePointer = model.coarsePointer || isNarrow model
     , onTurn = TurnSelection
@@ -2940,6 +2982,11 @@ ringConfig model id =
     , onLower = LowerSelection
     , onDelete = Delete
     , onGlue = ToggleGlue
+    , onCut = Cut
+    , onCopy = Copy
+    , onPaste = Paste
+    , onGroup = Group
+    , onUngroup = Ungroup
     , onMove = MoveSelection
     , onStep = SetStepSize
     , noOp = NoOp

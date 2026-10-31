@@ -68,6 +68,11 @@ type alias Config msg =
     , free : Bool
     , glued : Bool
     , movable : Bool
+    , canCut : Bool
+    , canCopy : Bool
+    , canPaste : Bool
+    , canGroup : Bool
+    , canUngroup : Bool
     , step : Step.StepSize
     , coarsePointer : Bool
     , onTurn : TurnDirection -> msg
@@ -75,6 +80,11 @@ type alias Config msg =
     , onLower : msg
     , onDelete : msg
     , onGlue : msg
+    , onCut : msg
+    , onCopy : msg
+    , onPaste : msg
+    , onGroup : msg
+    , onUngroup : msg
     , onMove : NudgeDirection -> msg
     , onStep : Step.StepSize -> msg
     , noOp : msg
@@ -291,6 +301,7 @@ view config =
                 , Attr.style "z-index" "12"
                 ]
                 [ headerRow config
+                , actionsRow config
                 , mainControlsPod config
                 ]
 
@@ -320,6 +331,7 @@ mobileView config =
         , Attr.style "pointer-events" "auto"
         ]
         [ headerRow config
+        , actionsRow config
         , mainControlsPod { config | coarsePointer = True }
         ]
 
@@ -362,6 +374,51 @@ utilityRow config =
          )
             ++ [ actionButton config config.onDelete "trash-2" "Delete" "Delete" ]
         )
+
+
+{-| The clipboard and grouping actions row (Cut, Copy, Paste, Group, Ungroup).
+-}
+actionsRow : Config msg -> Html msg
+actionsRow config =
+    div
+        [ Attr.attribute "role" "group"
+        , Attr.attribute "aria-label" "Clipboard and grouping actions"
+        , Attr.style "display" "flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "gap" "0.25rem"
+        , Attr.style "width" "100%"
+        ]
+        ([ customActionButton config config.canCut config.onCut "scissors" "Cut" "Cut (Ctrl+X)"
+         , customActionButton config config.canCopy config.onCopy "copy" "Copy" "Copy (Ctrl+C)"
+         , customActionButton config config.canPaste config.onPaste "clipboard" "Paste" "Paste (Ctrl+V)"
+         ]
+            ++ (if config.canGroup then
+                    [ customActionButton config config.canGroup config.onGroup "package" "Group" "Group (Ctrl+G)" ]
+
+                else
+                    []
+               )
+            ++ (if config.canUngroup then
+                    [ customActionButton config config.canUngroup config.onUngroup "minimize-2" "Ungroup" "Ungroup (Ctrl+Shift+G)" ]
+
+                else
+                    []
+               )
+        )
+
+
+customActionButton : Config msg -> Bool -> msg -> String -> String -> String -> Html msg
+customActionButton config enabled msg icon label tooltip =
+    roundButton
+        { noOp = config.noOp
+        , enabled = enabled
+        , onPress = msg
+        , label = label
+        , tooltip = tooltip
+        , pressed = Nothing
+        }
+        (Icon.featherSized 18 icon)
 
 
 {-| The main controls pod: a 3×2 movement pad on the left (QWE / ASD) and
