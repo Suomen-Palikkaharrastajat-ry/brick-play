@@ -20,6 +20,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Configure Git for HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
@@ -44,9 +47,7 @@ jobs:
       - name: Cache Elm dependencies
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.elm
-            elm-stuff
+          path: ~/.elm
           key: elm-${{ runner.os }}-${{ hashFiles('elm.json') }}
           restore-keys: elm-${{ runner.os }}-
 
