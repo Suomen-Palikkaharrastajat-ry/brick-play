@@ -1,0 +1,31 @@
+# --- Environment / local ---
+.env
+.devcontainer.json
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+.direnv
+
+# --- Dependencies ---
+node_modules
+node_modules/
+packages
+
+# --- Elm / frontend build artifacts ---
+elm-stuff/
+.elm-tailwind/
+.vite/
+build/
+
+# --- Editor & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- Misc / local ---
+.claude/
+TODO.local*
+TODO.md

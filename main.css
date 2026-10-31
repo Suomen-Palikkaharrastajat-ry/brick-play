@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@import "./vendor/brick-studio/packages/brick-frame-ui/theme.css";
+@source "./packages/ui-components/src";
+@source "./src";
+
+/* iOS Safari: a root sized to the window's height runs under the toolbar that
+   collapses and expands, so play fills the window with a fixed box. */
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+/* Touch screens only: names a mouse user reads from tooltips, which never show
+   on a finger. Hidden everywhere else. */
+.touch-only {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-only {
+    display: block;
+  }
+}

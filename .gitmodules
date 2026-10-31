@@ -1,0 +1,3 @@
+[submodule "vendor/brick-studio"]
+	path = vendor/brick-studio
+	url = ../brick-studio

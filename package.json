@@ -1,0 +1,25 @@
+{
+  "name": "brick-play",
+  "version": "1.0.0",
+  "description": "Interactive brick building and Technic machine simulator for Brick Frame",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --configLoader native --host 0.0.0.0 --port 5173",
+    "build": "vite build --configLoader native",
+    "preview": "vite preview --configLoader native --host 0.0.0.0 --port 4173",
+    "test": "elm-test",
+    "format": "elm-format --yes src/ tests/",
+    "check": "elm-format --validate src/ tests/",
+    "review": "elm-review"
+  },
+  "keywords": [
+    "lego",
+    "ldraw",
+    "brick-frame",
+    "elm",
+    "webgl",
+    "technic"
+  ],
+  "author": "Suomen Palikkaharrastajat ry",
+  "license": "MIT"
+}

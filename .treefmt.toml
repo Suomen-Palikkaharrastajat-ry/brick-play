@@ -1,0 +1,9 @@
+[formatter.fourmolu]
+command = "fourmolu"
+options = ["--mode", "inplace"]
+includes = ["src/**/*.hs", "generator/**/*.hs"]
+
+[formatter.elm-format]
+command = "elm-format"
+options = ["--yes"]
+includes = ["viewer-app/src/**/*.elm", "studio-app/src/**/*.elm"]

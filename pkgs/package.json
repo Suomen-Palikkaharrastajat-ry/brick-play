@@ -1,0 +1,20 @@
+{
+  "name": "template-frontend-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "elm-test"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "elm-tailwind-classes": "0.6.1",
+    "elm-test": "0.19.1-revision17",
+    "fflate": "^0.8.2",
+    "tailwindcss": "^4.2.2",
+    "vite": "^7.3.2",
+    "vite-plugin-elm": "^3.0.0"
+  }
+}
