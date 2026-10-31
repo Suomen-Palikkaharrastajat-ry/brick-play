@@ -59,7 +59,7 @@ jobs:
       - name: Verify CNAME
         run: |
           test -f build/CNAME || { echo "Missing build/CNAME"; exit 1; }
-          grep -qx "play.palikkaharrastajat.fi" build/CNAME || { echo "Unexpected build/CNAME content"; cat build/CNAME; exit 1; }
+          grep -qx "rakenna.palikkaharrastajat.fi" build/CNAME || { echo "Unexpected build/CNAME content"; cat build/CNAME; exit 1; }
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
