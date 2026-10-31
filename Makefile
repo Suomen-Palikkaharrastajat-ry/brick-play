@@ -1,11 +1,12 @@
 VITE ?= vite --configLoader native
 WATCH_PORT ?= 5173
+PREVIEW_PORT ?= 4173
 
 .PHONY: help
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-# ── Submodules & Symlinks ────────────────────────────────────────────────────
+# ── Vendor / submodules ──────────────────────────────────────────────────────
 
 .PHONY: vendor
 vendor: ## Init and update submodules and configure symlinks
@@ -15,11 +16,23 @@ vendor: ## Init and update submodules and configure symlinks
 	mkdir -p review/src
 	ln -sfn ../../vendor/brick-studio/vendor/master-builder/review/src/LlmAgent review/src/LlmAgent
 
-# ── Development & Build ──────────────────────────────────────────────────────
+# ── Development environment ──────────────────────────────────────────────────
+
+.PHONY: shell
+shell: ## Enter devenv shell
+	devenv shell
+
+.PHONY: develop
+develop: devenv.local.nix devenv.local.yaml ## Bootstrap devenv shell + VS Code
+	devenv shell --profile=devcontainer -- code .
+
+# ── Sources ──────────────────────────────────────────────────────────────────
 
 SHARED_ELM_SOURCES := $(shell find vendor/brick-studio/packages/ -name '*.elm' 2>/dev/null)
 PLAY_SOURCES := $(shell find src -name '*.elm') $(SHARED_ELM_SOURCES)
 ELM_PACKAGE_SOURCES := $(shell find packages/ -name '*.elm' -o -name '*.css' 2>/dev/null)
+
+# ── Development & Build ──────────────────────────────────────────────────────
 
 .PHONY: elm-tailwind-gen
 elm-tailwind-gen: .elm-tailwind/.stamp ## Generate typed Tailwind Elm modules
@@ -29,37 +42,64 @@ elm-tailwind-gen: .elm-tailwind/.stamp ## Generate typed Tailwind Elm modules
 	mkdir -p .elm-tailwind
 	touch $@
 
-.PHONY: dev
-dev: elm-tailwind-gen ## Start Vite dev server (http://localhost:5173)
+.PHONY: play-dev
+play-dev: elm-tailwind-gen ## Start Vite dev server (http://localhost:5173)
 	$(VITE) --host 0.0.0.0 --port $(WATCH_PORT)
+
+.PHONY: dev
+dev: play-dev ## Alias for play-dev
 
 build/.stamp: elm-tailwind-gen index.html main.js main.css vite.config.mjs $(PLAY_SOURCES) $(ELM_PACKAGE_SOURCES)
 	mkdir -p build
 	$(VITE) build --outDir build
 	touch $@
 
+.PHONY: play-build
+play-build: build/.stamp ## Production build of brick-play → build/
+
 .PHONY: build
-build: build/.stamp ## Production build of brick-play → build/
+build: play-build ## Build brick-play
 
 .PHONY: preview
 preview: build ## Preview production build locally
-	$(VITE) preview --outDir build --host 0.0.0.0 --port 4173
+	$(VITE) preview --outDir build --host 0.0.0.0 --port $(PREVIEW_PORT)
+
+.PHONY: serve
+serve: preview ## Alias for preview
 
 # ── Test & Quality ───────────────────────────────────────────────────────────
 
-.PHONY: test
-test: elm-tailwind-gen ## Run all unit tests
+.PHONY: elm-test
+elm-test: elm-tailwind-gen ## Run all unit tests
 	elm-test
 
-.PHONY: check
-check: ## Validate Elm formatting and review rules
+.PHONY: test
+test: check elm-test ## Run check and play tests
+
+.PHONY: elm-check
+elm-check: ## Check Elm formatting (no changes)
 	elm-format --validate src/ tests/
+
+.PHONY: elm-format
+elm-format: ## Auto-format Elm source files
+	elm-format --yes src/ tests/
+
+.PHONY: elm-review
+elm-review: ## Run elm-review rules
 	elm-review
 
+.PHONY: elm-review-fix
+elm-review-fix: ## Run elm-review with auto-fix
+	elm-review --fix
+
+.PHONY: check
+check: elm-check elm-review ## Validate Elm formatting and review rules
+
 .PHONY: format
-format: ## Auto-format Elm source files
-	elm-format --yes src/ tests/
+format: elm-format ## Auto-format source files
 	treefmt
+
+# ── Cleanup ───────────────────────────────────────────────────────────────────
 
 .PHONY: clean
 clean: ## Remove build artifacts
