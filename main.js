@@ -7,7 +7,8 @@ import { encodeHash, toUint8Array } from './vendor/brick-studio/packages/brick-f
 import { Elm } from './src/Main.elm'
 
 const siteRoot = new URL(import.meta.env.VITE_SITE_ROOT ?? '../', window.location.href).href
-const ldrawBase = import.meta.env.VITE_LDRAW_BASE ?? `${siteRoot}ldraw`
+const ldrawBase = import.meta.env.VITE_LDRAW_BASE || 'https://catalog.palikkaharrastajat.fi/raw'
+const indicesBase = import.meta.env.VITE_LDRAW_INDICES_BASE || 'https://catalog.palikkaharrastajat.fi/indices'
 
 // The first-selection hint is shown once per browser. The flag lives in
 // localStorage; a private window or blocked storage just shows it again.
@@ -56,6 +57,7 @@ const runtime = initBricksRuntime({
   node: document.getElementById('app'),
   mode: 'simulator',
   ldrawBase,
+  indicesBase,
   ldrawFallbackBase: import.meta.env.VITE_LDRAW_FALLBACK_BASE ?? '',
   defaultModel: '',
   loadModelInJs: false,

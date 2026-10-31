@@ -22,6 +22,10 @@ function serveViewerAssets() {
     name: 'serve-viewer-assets',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (!fs.existsSync(viewerPublic)) {
+          next()
+          return
+        }
         const url = new URL(req.url ?? '/', 'http://localhost')
         const file = path.join(viewerPublic, decodeURIComponent(url.pathname))
         if (!file.startsWith(viewerPublic) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
