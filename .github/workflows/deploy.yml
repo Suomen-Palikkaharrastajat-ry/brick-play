@@ -1,0 +1,84 @@
+name: Deploy Play to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare vendor links
+        run: make vendor
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: cachix/cachix-action@v16
+        with:
+          name: palikkaharrastajat
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          extraPullNames: devenv
+
+      - name: Install devenv
+        run: nix profile install "github:cachix/devenv/v2.0.6"
+
+      - name: Cache Elm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elm
+            elm-stuff
+          key: elm-${{ runner.os }}-${{ hashFiles('elm.json') }}
+          restore-keys: elm-${{ runner.os }}-
+
+      - name: Run tests
+        run: devenv shell --profile ci -- make test
+
+      - name: Build
+        run: devenv shell --profile ci -- make build
+
+      - name: Verify CNAME
+        run: |
+          test -f build/CNAME || { echo "Missing build/CNAME"; exit 1; }
+          grep -qx "play.palikkaharrastajat.fi" build/CNAME || { echo "Unexpected build/CNAME content"; cat build/CNAME; exit 1; }
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

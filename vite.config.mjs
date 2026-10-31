@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     cacheDir: '.vite',
-    publicDir: false,
+    publicDir: 'public',
     plugins: [elmTailwind(), elm({ debug: false }), tailwindcss(), serveViewerAssets()],
     build: {
       outDir: 'build',
