@@ -92,6 +92,18 @@ pillTests =
                                 |> Query.find [ Selector.attribute pillAttribute ]
                                 |> Query.has [ Selector.text "2 loose bricks · Tidy up" ]
                        )
+        , test "one overlapping brick says so, and offers Tidy up" <|
+            \_ ->
+                freshModel
+                    |> withLines
+                        [ brick "3001.dat" 0 -24 0
+                        , brick "3005.dat" 0 -24 0
+                        ]
+                    |> (\model ->
+                            Query.fromHtml (view model)
+                                |> Query.find [ Selector.attribute pillAttribute ]
+                                |> Query.has [ Selector.text "1 overlapping brick · Tidy up" ]
+                       )
         ]
 
 

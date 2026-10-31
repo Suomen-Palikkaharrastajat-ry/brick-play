@@ -2127,11 +2127,11 @@ tidyRow model =
             , Attr.style "overflow" "hidden"
             , Attr.style "white-space" "nowrap"
             ]
-            [ tidyPill (List.length model.tidy) ]
+            [ tidyPill model.tidy ]
 
 
-tidyPill : Int -> Html Msg
-tidyPill count =
+tidyPill : List Health.Fix -> Html Msg
+tidyPill fixes =
     button
         [ onClick OpenTidy
         , Attr.attribute "data-tidy-pill" ""
@@ -2154,18 +2154,51 @@ tidyPill count =
         , Attr.style "text-overflow" "ellipsis"
         , Attr.style "cursor" "pointer"
         ]
-        [ text (tidyLabel count) ]
+        [ text (tidyLabel fixes) ]
 
 
-{-| The pill's words: "1 loose brick · Tidy up", "3 loose bricks · Tidy up".
+{-| The pill's words: "1 loose brick · Tidy up", "1 overlapping brick · Tidy up", "3 loose bricks · Tidy up".
 -}
-tidyLabel : Int -> String
-tidyLabel count =
-    (if count == 1 then
-        "1 loose brick"
+tidyLabel : List Health.Fix -> String
+tidyLabel fixes =
+    let
+        count =
+            List.length fixes
+
+        hasSnap =
+            List.any (\f -> f.reason == Health.SnapToStud) fixes
+
+        hasOverlap =
+            List.any
+                (\f ->
+                    case f.reason of
+                        Health.LiftOut _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                fixes
+    in
+    (if hasSnap && not hasOverlap then
+        if count == 1 then
+            "1 loose brick"
+
+        else
+            String.fromInt count ++ " loose bricks"
+
+     else if hasOverlap && not hasSnap then
+        if count == 1 then
+            "1 overlapping brick"
+
+        else
+            String.fromInt count ++ " overlapping bricks"
+
+     else if count == 1 then
+        "1 issue"
 
      else
-        String.fromInt count ++ " loose bricks"
+        String.fromInt count ++ " issues"
     )
         ++ " · Tidy up"
 
