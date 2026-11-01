@@ -283,6 +283,35 @@ freeDockTests =
                         Tuple.first (update Undo recolored)
                 in
                 Expect.equal [ 14 ] (List.map .color (Core.getPlacements undone.studio))
+        , test "picking a colour swatch recolors all parts in a selected group and undo restores their colours" <|
+            \_ ->
+                let
+                    withTwo =
+                        open ""
+                            |> addFree "3001.dat" 14
+                            |> addFree "3001.dat" 4
+
+                    allSelected =
+                        { withTwo | studio = Core.selectAll withTwo.studio }
+
+                    grouped =
+                        Tuple.first (update Group allSelected)
+
+                    recolored =
+                        Tuple.first (update (SetPaintColour 1) grouped)
+
+                    undone =
+                        Tuple.first (update Undo recolored)
+
+                    ungrouped =
+                        Tuple.first (update Ungroup recolored)
+                in
+                Expect.all
+                    [ \_ -> Expect.equal [ 1, 1, 1 ] (List.map .color (Core.getPlacements recolored.studio))
+                    , \_ -> Expect.equal [ 16, 14, 4 ] (List.map .color (Core.getPlacements undone.studio))
+                    , \_ -> Expect.equal [ 1, 1 ] (List.map .color (Core.getPlacements ungrouped.studio))
+                    ]
+                    ()
         , test "glued parts are protected from recoloring when picking a colour swatch" <|
             \_ ->
                 let
