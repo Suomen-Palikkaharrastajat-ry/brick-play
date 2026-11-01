@@ -3,6 +3,7 @@ module Main exposing
     , Model
     , Msg(..)
     , accomplishmentBanner
+    , accomplishmentBannerIn
     , hashFor
     , helpRows
     , init
@@ -101,6 +102,7 @@ import Html.Attributes as Attr
 import Html.Events exposing (onClick, onFocus, onInput, preventDefaultOn)
 import Html.Keyed as Keyed
 import Http
+import I18n exposing (Language(..))
 import Json.Decode as Decode
 import LDraw.Colors as Colors
 import LDraw.Document as Document
@@ -156,6 +158,7 @@ type alias Flags =
     , supportsPointerEvents : Bool
     , hintSeen : Bool
     , coarsePointer : Bool
+    , language : Maybe String
     }
 
 
@@ -206,6 +209,7 @@ type alias Model =
     , lastTap : Maybe { x : Float, y : Float, millis : Int, part : Maybe Int }
     , hintSeen : Bool
     , coarsePointer : Bool
+    , language : Language
     , hint : Maybe Int
     , hintCounter : Int
     }
@@ -308,6 +312,7 @@ type Msg
     | ToggleHelp
     | ToggleMenu
     | CloseMenu
+    | SetLanguage Language
     | OpenTidy
     | CancelTidy
     | ApplyTidy
@@ -448,6 +453,7 @@ init flags =
             , lastTap = Nothing
             , hintSeen = flags.hintSeen
             , coarsePointer = flags.coarsePointer
+            , language = Maybe.map I18n.fromString flags.language |> Maybe.withDefault I18n.defaultLanguage
             , hint = Nothing
             , hintCounter = 0
             }
@@ -1493,6 +1499,11 @@ step msg model =
         CloseMenu ->
             ( syncKeyPause { model | menuOpen = False }, Cmd.none )
 
+        SetLanguage lang ->
+            ( syncKeyPause { model | language = lang, menuOpen = False }
+            , Ports.storeLanguage (I18n.toString lang)
+            )
+
         ShareEditableModel ->
             if model.free then
                 copyShareHash (Link.editableHash model.studio.document) model
@@ -1559,7 +1570,7 @@ copyShareHash hash model =
     in
     ( { model
         | menuOpen = False
-        , toast = Just { message = "Link copied to clipboard!", id = nextId }
+        , toast = Just { message = I18n.linkCopied model.language, id = nextId }
         , toastCounter = nextId
       }
     , Cmd.batch
@@ -2063,7 +2074,7 @@ view model =
             ]
             [ h1 [ Attr.class "sr-only" ] [ text "Palikkakehys Play" ]
             , HamburgerMenu.view (menuConfig model)
-            , helpButton
+            , helpButton model.language
             , if technicMode model then
                 playButton model.playing
 
@@ -2079,7 +2090,7 @@ view model =
             , hintRow model
             , touchLabel model
             , if accomplished then
-                accomplishmentBanner gearCount
+                accomplishmentBannerIn model.language gearCount
 
               else
                 text ""
@@ -2116,7 +2127,7 @@ view model =
                 , Attr.style "z-index" "30"
                 , Attr.style "pointer-events" "none"
                 ]
-                [ ShortcutHelp.view { rows = helpRows model, onClose = ToggleHelp } ]
+                [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
 
           else
             text ""
@@ -2131,7 +2142,7 @@ view model =
                 text ""
         , case model.snapshotModal of
             Just modal ->
-                SnapshotModal.view
+                SnapshotModal.viewWithLanguage model.language
                     { onSave = SnapshotSave
                     , onClose = SnapshotClose
                     }
@@ -2164,15 +2175,15 @@ tidyRow model =
             , Attr.style "overflow" "hidden"
             , Attr.style "white-space" "nowrap"
             ]
-            [ tidyPill model.tidy ]
+            [ tidyPill model.language model.tidy ]
 
 
-tidyPill : List Health.Fix -> Html Msg
-tidyPill fixes =
+tidyPill : Language -> List Health.Fix -> Html Msg
+tidyPill lang fixes =
     button
         [ onClick OpenTidy
         , Attr.attribute "data-tidy-pill" ""
-        , Attr.title "Preview the tidy-up moves"
+        , Attr.title (I18n.tidyPreviewTip lang)
         , Attr.attribute "aria-haspopup" "dialog"
         , Attr.style "pointer-events" "auto"
         , Attr.style "align-self" "center"
@@ -2191,13 +2202,18 @@ tidyPill fixes =
         , Attr.style "text-overflow" "ellipsis"
         , Attr.style "cursor" "pointer"
         ]
-        [ text (tidyLabel fixes) ]
+        [ text (tidyLabelIn lang fixes) ]
 
 
 {-| The pill's words: "1 loose brick · Tidy up", "1 overlapping brick · Tidy up", "3 loose bricks · Tidy up".
 -}
 tidyLabel : List Health.Fix -> String
 tidyLabel fixes =
+    tidyLabelIn En fixes
+
+
+tidyLabelIn : Language -> List Health.Fix -> String
+tidyLabelIn lang fixes =
     let
         count =
             List.length fixes
@@ -2217,27 +2233,7 @@ tidyLabel fixes =
                 )
                 fixes
     in
-    (if hasSnap && not hasOverlap then
-        if count == 1 then
-            "1 loose brick"
-
-        else
-            String.fromInt count ++ " loose bricks"
-
-     else if hasOverlap && not hasSnap then
-        if count == 1 then
-            "1 overlapping brick"
-
-        else
-            String.fromInt count ++ " overlapping bricks"
-
-     else if count == 1 then
-        "1 issue"
-
-     else
-        String.fromInt count ++ " issues"
-    )
-        ++ " · Tidy up"
+    I18n.tidyPillLabel lang { count = count, hasOverlap = hasOverlap, hasSnap = hasSnap }
 
 
 {-| The Tidy up preview: an accessible dialog listing the moves, with Apply and
@@ -2250,14 +2246,7 @@ tidyPanel model =
             List.length model.tidy
 
         summary =
-            String.fromInt count
-                ++ (if count == 1 then
-                        " part will move."
-
-                    else
-                        " parts will move."
-                   )
-                ++ " The translucent copies show where."
+            I18n.tidySummary model.language count
     in
     div
         [ Attr.attribute "role" "dialog"
@@ -2288,19 +2277,19 @@ tidyPanel model =
             , Attr.style "font-size" "1rem"
             , Attr.style "font-weight" "700"
             ]
-            [ text "Tidy up" ]
+            [ text (I18n.tidyTitle model.language) ]
         , p
             [ Attr.id "tidy-summary"
             , Attr.style "margin" "0 0 0.625rem"
             ]
             [ text summary ]
         , ul
-            [ Attr.attribute "aria-label" "Planned moves"
+            [ Attr.attribute "aria-label" (I18n.tidyPlannedMoves model.language)
             , Attr.style "margin" "0 0 0.875rem"
             , Attr.style "padding-left" "1.125rem"
             ]
             (List.map
-                (\fix -> li [ Attr.style "margin" "0.125rem 0" ] [ text (Health.describe (tidyPartTitle model) model.studio.document fix) ])
+                (\fix -> li [ Attr.style "margin" "0.125rem 0" ] [ text (Health.describeIn model.language (tidyPartTitle model) model.studio.document fix) ])
                 model.tidy
             )
         , div
@@ -2308,8 +2297,8 @@ tidyPanel model =
             , Attr.style "justify-content" "flex-end"
             , Attr.style "gap" "0.5rem"
             ]
-            [ tidyButton False CancelTidy "Cancel"
-            , tidyButton True ApplyTidy "Apply"
+            [ tidyButton False CancelTidy (I18n.tidyCancel model.language)
+            , tidyButton True ApplyTidy (I18n.tidyApply model.language)
             ]
         ]
 
@@ -2361,13 +2350,23 @@ tidyPartTitle model file color =
             case Dict.get (PartCard.thumbnailKey file color) model.thumbnails of
                 Just thumb ->
                     if String.isEmpty (String.trim thumb.title) then
-                        "part " ++ partNumber file
+                        case model.language of
+                            Fi ->
+                                "osa " ++ partNumber file
+
+                            En ->
+                                "part " ++ partNumber file
 
                     else
                         String.toLower thumb.title
 
                 Nothing ->
-                    "part " ++ partNumber file
+                    case model.language of
+                        Fi ->
+                            "osa " ++ partNumber file
+
+                        En ->
+                            "part " ++ partNumber file
 
 
 {-| Asks the thumbnail pipeline for the parts a Tidy up move names, so that the
@@ -2486,7 +2485,7 @@ shiftDragRow model =
                 , preventDefaultOn "touchstart" (Decode.succeed ( ToggleDragShift, True ))
                 , keepFocusOnCanvas
                 , Attr.attribute "data-shift-drag" ""
-                , Attr.attribute "aria-label" "Shift (bit-drag)"
+                , Attr.attribute "aria-label" (I18n.ringShiftBitTip model.language)
                 , Attr.attribute "aria-pressed"
                     (if active then
                         "true"
@@ -2494,7 +2493,7 @@ shiftDragRow model =
                      else
                         "false"
                     )
-                , Attr.title "Shift: drag by 1 LDU without snapping (bit-dragging)"
+                , Attr.title (I18n.ringShiftBitTip model.language)
                 , Attr.class "touch-target"
                 , Attr.style "pointer-events" "auto"
                 , Attr.style "display" "inline-flex"
@@ -2531,7 +2530,7 @@ shiftDragRow model =
                 , Attr.style "cursor" "pointer"
                 ]
                 [ Icon.featherSized 16 "crosshair"
-                , span [] [ text "Shift · Bit" ]
+                , span [] [ text (I18n.ringShiftBitPill model.language) ]
                 ]
             ]
 
@@ -2608,7 +2607,7 @@ cameraToggle model =
     in
     button
         [ onClick ToggleCameraPanel
-        , Attr.attribute "aria-label" "Camera controls"
+        , Attr.attribute "aria-label" (I18n.cameraControls model.language)
         , Attr.attribute "aria-pressed"
             (if model.cameraShown then
                 "true"
@@ -2616,7 +2615,7 @@ cameraToggle model =
              else
                 "false"
             )
-        , Attr.title "Camera controls"
+        , Attr.title (I18n.cameraControls model.language)
         , Attr.class "touch-target"
         , Attr.style "display" "flex"
         , Attr.style "flex-shrink" "0"
@@ -2671,7 +2670,7 @@ globeControl model =
                 ]
                 [ Button.icon
                     { icon = Icon.feather "sun"
-                    , label = "Realistic rendering"
+                    , label = I18n.cameraRealistic model.language
                     , shortcut = Nothing
                     , pressed = Just (Core.renderQuality model.studio == Style.Realistic)
                     , enabled = True
@@ -2680,7 +2679,7 @@ globeControl model =
                     ToggleRealistic
                 , Button.icon
                     { icon = Icon.feather "camera"
-                    , label = "Take snapshot"
+                    , label = I18n.cameraTakeSnapshot model.language
                     , shortcut = Nothing
                     , pressed = Nothing
                     , enabled = True
@@ -2759,7 +2758,7 @@ gearRow model =
         Just feedback ->
             let
                 label =
-                    GearFeedback.feedbackText feedback
+                    GearFeedback.feedbackTextIn model.language feedback
             in
             div
                 [ Attr.style "display" "flex"
@@ -2769,7 +2768,7 @@ gearRow model =
                 , Attr.style "overflow" "hidden"
                 , Attr.style "white-space" "nowrap"
                 ]
-                [ Keyed.node "span" [ Attr.style "display" "contents" ] [ ( label, GearFeedback.pill feedback ) ] ]
+                [ Keyed.node "span" [ Attr.style "display" "contents" ] [ ( label, GearFeedback.pillIn model.language feedback ) ] ]
 
         Nothing ->
             text ""
@@ -2786,11 +2785,30 @@ menuConfig model =
     , onClose = CloseMenu
     , items =
         shareMenuItems model
-            ++ [ { label = "Download BrickLink Studio (.io)", shortcut = "", enabled = not (List.isEmpty (Core.getPlacements model.studio)), onSelect = MenuPicked DownloadIo }
-               , { label = "Undo", shortcut = "Ctrl+Z", enabled = Core.canUndo model.studio, onSelect = MenuPicked Undo }
-               , { label = "Redo", shortcut = "Ctrl+Shift+Z", enabled = Core.canRedo model.studio, onSelect = MenuPicked Redo }
-               , { label = "Delete", shortcut = "Del", enabled = Core.hasSelection model.studio, onSelect = MenuPicked Delete }
-               , { label = "Clear", shortcut = "", enabled = clearable model, onSelect = MenuPicked Clear }
+            ++ [ { label =
+                    case model.language of
+                        Fi ->
+                            "Kieli: Suomi (In English)"
+
+                        En ->
+                            "Language: English (Suomeksi)"
+                 , shortcut = ""
+                 , enabled = True
+                 , onSelect =
+                    SetLanguage
+                        (case model.language of
+                            Fi ->
+                                En
+
+                            En ->
+                                Fi
+                        )
+                 }
+               , { label = I18n.menuDownloadIo model.language, shortcut = "", enabled = not (List.isEmpty (Core.getPlacements model.studio)), onSelect = MenuPicked DownloadIo }
+               , { label = I18n.menuUndo model.language, shortcut = "Ctrl+Z", enabled = Core.canUndo model.studio, onSelect = MenuPicked Undo }
+               , { label = I18n.menuRedo model.language, shortcut = "Ctrl+Shift+Z", enabled = Core.canRedo model.studio, onSelect = MenuPicked Redo }
+               , { label = I18n.menuDelete model.language, shortcut = "Del", enabled = Core.hasSelection model.studio, onSelect = MenuPicked Delete }
+               , { label = I18n.menuClear model.language, shortcut = "", enabled = clearable model, onSelect = MenuPicked Clear }
                ]
     }
 
@@ -2802,17 +2820,17 @@ set offers only parts set, and a fixed model offers only fixed model).
 shareMenuItems : Model -> List (HamburgerMenu.Item Msg)
 shareMenuItems model =
     if model.free then
-        [ { label = "Share editable model", shortcut = "", enabled = True, onSelect = MenuPicked ShareEditableModel }
-        , { label = "Share parts set", shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
-        , { label = "Share fixed model", shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
+        [ { label = I18n.menuShareEditable model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareEditableModel }
+        , { label = I18n.menuSharePartsSet model.language, shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
+        , { label = I18n.menuShareFixed model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
         ]
 
     else if List.isEmpty model.inventory then
-        [ { label = "Share fixed model", shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
+        [ { label = I18n.menuShareFixed model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
         ]
 
     else
-        [ { label = "Share parts set", shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
+        [ { label = I18n.menuSharePartsSet model.language, shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
         ]
 
 
@@ -2831,12 +2849,12 @@ clearable model =
 {-| The visible shortcut-reference button: it toggles the help overlay, as the
 `?` key does.
 -}
-helpButton : Html Msg
-helpButton =
+helpButton : Language -> Html Msg
+helpButton lang =
     button
         [ onClick ToggleHelp
-        , Attr.attribute "aria-label" "Keyboard shortcuts (?)"
-        , Attr.title "Keyboard shortcuts (?)"
+        , Attr.attribute "aria-label" (I18n.headerShortcuts lang)
+        , Attr.title (I18n.headerShortcuts lang)
         , Attr.style "display" "flex"
         , Attr.style "flex-shrink" "0"
         , Attr.style "align-items" "center"
@@ -2868,7 +2886,12 @@ LDraw palette's Green (the theme has no green token). It is one line, the height
 of the top buttons, and ellipsizes on a narrow window.
 -}
 accomplishmentBanner : Int -> Html Msg
-accomplishmentBanner gearCount =
+accomplishmentBanner =
+    accomplishmentBannerIn En
+
+
+accomplishmentBannerIn : Language -> Int -> Html Msg
+accomplishmentBannerIn lang gearCount =
     let
         green =
             Colors.resolveColor 2 16
@@ -2900,7 +2923,7 @@ accomplishmentBanner gearCount =
           -- translated the old text cannot leave stale copies behind.
           let
             label =
-                "All " ++ String.fromInt gearCount ++ " gears are rotating together!"
+                I18n.gearAllRotating lang gearCount
           in
           Keyed.node "span" [] [ ( label, span [] [ text label ] ) ]
         ]
@@ -2990,6 +3013,7 @@ ringConfig model id =
     , onMove = MoveSelection
     , onStep = SetStepSize
     , noOp = NoOp
+    , language = model.language
     }
 
 
@@ -3013,19 +3037,28 @@ hintRow model =
                 , Attr.style "white-space" "nowrap"
                 , Attr.style "pointer-events" "none"
                 ]
-                [ text (hintText model.coarsePointer) ]
+                [ text (hintText model.language model.coarsePointer) ]
 
         Nothing ->
             text ""
 
 
-hintText : Bool -> String
-hintText coarse =
-    if coarse then
-        "Double-tap a brick for moves"
+hintText : Language -> Bool -> String
+hintText lang coarse =
+    case lang of
+        Fi ->
+            if coarse then
+                "Kaksoisnapauta palikkaa liikuttaaksesi"
 
-    else
-        "Double-click a brick for moves"
+            else
+                "Kaksoisnapsauta palikkaa liikuttaaksesi"
+
+        En ->
+            if coarse then
+                "Double-tap a brick for moves"
+
+            else
+                "Double-click a brick for moves"
 
 
 boolText : Bool -> String
@@ -3244,11 +3277,11 @@ tabRow model =
         , Attr.style "overflow-y" "hidden"
         , Attr.class "scroll-thin"
         ]
-        (List.map (tabButton model.activeTab) FreeCatalog.tabs)
+        (List.map (tabButton model.language model.activeTab) FreeCatalog.tabs)
 
 
-tabButton : FreeCatalog.Tab -> FreeCatalog.Tab -> Html Msg
-tabButton active tab =
+tabButton : Language -> FreeCatalog.Tab -> FreeCatalog.Tab -> Html Msg
+tabButton lang active tab =
     let
         isSelected =
             active == tab
@@ -3283,7 +3316,26 @@ tabButton active tab =
         , Attr.style "transition" "all 150ms ease"
         , Attr.class "touch-target"
         ]
-        [ text (FreeCatalog.tabLabel tab) ]
+        [ text (tabLabelIn lang tab) ]
+
+
+tabLabelIn : Language -> FreeCatalog.Tab -> String
+tabLabelIn lang tab =
+    case tab of
+        FreeCatalog.BricksTab ->
+            I18n.categoryBricks lang
+
+        FreeCatalog.PlatesTab ->
+            I18n.categoryPlates lang
+
+        FreeCatalog.SlopesTab ->
+            I18n.categorySlopesAndTiles lang
+
+        FreeCatalog.BracketsTab ->
+            I18n.categoryBracketsSnot lang
+
+        FreeCatalog.TechnicTab ->
+            I18n.categoryTechnic lang
 
 
 {-| The part search box. Typing searches the whole part library; a form field, so
@@ -3294,8 +3346,8 @@ searchField model =
     input
         [ Attr.type_ "search"
         , Attr.id "play-part-search"
-        , Attr.attribute "aria-label" "Search all parts"
-        , Attr.placeholder "Search parts"
+        , Attr.attribute "aria-label" (I18n.paletteSearchAria model.language)
+        , Attr.placeholder (I18n.paletteSearchPlaceholder model.language)
         , Attr.value model.search.query
         , onInput SearchInput
         , onFocus SearchOpened
@@ -3336,10 +3388,10 @@ cardsRow model =
             else
                 case model.search.index of
                     NotLoaded ->
-                        note "Loading the part library…"
+                        note (I18n.paletteLoading model.language)
 
                     Loading ->
-                        note "Loading the part library…"
+                        note (I18n.paletteLoading model.language)
 
                     Failed reason ->
                         note ("No part library: " ++ reason ++ ".")
@@ -3411,86 +3463,11 @@ only in Technic mode, where it applies.
 -}
 helpRows : Model -> List ( String, List ( String, String ) )
 helpRows model =
-    [ ( "Build"
-      , [ ( "Menu, top left", "Share link, undo, redo, delete, clear, and this list" )
-        , ( "Drag a part", "Move it as seen from the camera (snaps to the move step)" )
-        , ( "Double-click a part, or double-tap", "Open its ring: turn, tip, raise, lower, delete, glue, and the move pad" )
-        , ( "Ring: Stud, ½ stud, Bit", "The move step: Stud 20 LDU sideways and 24 up or down; ½ stud 10 and 8; Bit 1 LDU" )
-        , ( "Shift (held)", "A temporary Bit: 1 LDU for keys and drags" )
-        , ( "W A S D  Q E, with a part selected", "Move it: W away from the camera, S toward it, A and D left and right, Q down, E up" )
-        , ( "W A S D  Q E, nothing selected", "Move the camera, as in the Camera section" )
-        , ( "Tab  /  Shift + Tab", "Select the next or previous brick: bottom to top, then back to front, then left to right" )
-        , ( "← → ↑ ↓", "Turn the selected part (Shift: 45°)" )
-        , ( "Delete", "Remove the selected part" )
-        , ( "Ctrl + Z", "Undo" )
-        , ( "Ctrl + Shift + Z  Ctrl + Y", "Redo" )
-        , ( "Ctrl + C", "Copy" )
-        , ( "Ctrl + V", "Paste" )
-        , ( "Ctrl + D", "Duplicate" )
-        , ( "Ctrl + A", "Select all" )
-        , ( "Ctrl + click  Shift + click", "Add to or remove from the selection" )
-        , ( "Tidy up (pill, top left)", "Shown when parts sit off the studs or overlap. Tidy up previews the moves as ghosts; Apply makes them one undo step, Cancel or Esc changes nothing" )
-        , ( "Esc", "Close the ring, then cancel a drag, or deselect" )
-        ]
-            ++ (if model.free then
-                    [ ( "L  (ring: Glue)", "Glue the selected parts to the board, locked, or unglue them" ) ]
-
-                else
-                    []
-               )
-      )
-    ]
-        ++ (if model.free then
-                [ ( "Dock"
-                  , [ ( "Tabs and colour row", "Bricks, plates, slopes and tiles, Technic; the colour row sets the colour of the next part" )
-                    , ( "Search box", "Find any part in the whole library by name or number, then tap it to add it" )
-                    ]
-                  )
-                ]
-
-            else if List.isEmpty model.inventory then
-                []
-
-            else
-                [ ( "Dock"
-                  , [ ( "Cards", "Each card is one part of the kit; its count shows on the picture" )
-                    , ( "Glued parts", "A glued part is locked: it cannot be moved, turned or recoloured" )
-                    ]
-                  )
-                ]
-           )
-        ++ [ ( "Camera"
-             , [ ( "Drag the globe, bottom right", "Orbit the camera (also by touch)" )
-               , ( "Tap the globe", "Fly to that side of the model" )
-               , ( "Zoom slider", "Zoom in and out" )
-               , ( "Reset view, or F", "Fit the whole model in view" )
-               , ( "Drag empty space", "Pan" )
-               , ( "Right-drag", "Orbit" )
-               , ( "Middle drag", "Pan" )
-               , ( "One finger on empty space", "Pan" )
-               , ( "Two fingers on empty space", "Orbit; spread or pinch to zoom" )
-               , ( "Wheel  + -", "Zoom" )
-               , ( "1 2 3 4 5 6  `", "Views: front, back, left, right, top, bottom, 3/4" )
-               , ( "G", "Street-level walk, on / off" )
-               ]
-             )
-           ]
-        ++ (if technicMode model then
-                [ ( "Machine"
-                  , [ ( "Space", "Play / pause the machine (an edit stops it and rewinds)" )
-                    , ( "Gears turn to mesh", "A gear that meets another turns its axle line so the teeth interlock" )
-                    , ( "Gear pill", "With one gear selected, says how it meets its nearest gear" )
-                    ]
-                  )
-                ]
-
-            else
-                []
-           )
-        ++ [ ( "Help"
-             , [ ( "?  /", "This list" ) ]
-             )
-           ]
+    I18n.shortcutsHelpRows model.language
+        { free = model.free
+        , technic = technicMode model
+        , hasInventory = not (List.isEmpty model.inventory)
+        }
 
 
 {-| Play or pause the machine. Highlighted while it runs, like the old

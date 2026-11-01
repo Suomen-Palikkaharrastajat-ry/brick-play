@@ -13,6 +13,25 @@ const indicesBase = import.meta.env.VITE_LDRAW_INDICES_BASE || 'https://catalog.
 // The first-selection hint is shown once per browser. The flag lives in
 // localStorage; a private window or blocked storage just shows it again.
 const HINT_KEY = 'palikkakehys.play.hintSeen'
+const LANG_KEY = 'palikkakehys.language'
+
+function readLanguage() {
+  try {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const searchParams = new URLSearchParams(window.location.search)
+    const lang = searchParams.get('lang') || hashParams.get('lang')
+    if (lang) {
+      return lang.toLowerCase().startsWith('en') ? 'en' : 'fi'
+    }
+    const stored = window.localStorage.getItem(LANG_KEY)
+    if (stored) {
+      return stored.toLowerCase().startsWith('en') ? 'en' : 'fi'
+    }
+    return 'fi'
+  } catch {
+    return 'fi'
+  }
+}
 
 function readHintSeen() {
   try {
@@ -61,7 +80,7 @@ const runtime = initBricksRuntime({
   ldrawFallbackBase: import.meta.env.VITE_LDRAW_FALLBACK_BASE ?? '',
   defaultModel: '',
   loadModelInJs: false,
-  extraFlags: { hintSeen: readHintSeen(), coarsePointer },
+  extraFlags: { hintSeen: readHintSeen(), coarsePointer, language: readLanguage() },
   initialHash: window.location.hash ?? '',
   syncUrlHash: true,
   useWindowResize: true,
@@ -70,6 +89,14 @@ const runtime = initBricksRuntime({
 })
 
 runtime.app?.ports?.rememberHintSeen?.subscribe(rememberHintSeen)
+
+runtime.app?.ports?.storeLanguage?.subscribe((lang) => {
+  try {
+    window.localStorage.setItem(LANG_KEY, lang)
+  } catch {
+    // Storage unavailable
+  }
+})
 
 if (runtime.app?.ports?.copyToClipboard) {
   runtime.app.ports.copyToClipboard.subscribe((data) => {

@@ -13,6 +13,7 @@ port module Ports exposing
     , snapshotFailed
     , snapshotProgress
     , snapshotReady
+    , storeLanguage
     , thumbnailLoaded
     )
 
@@ -101,3 +102,8 @@ port downloadStudioIo : { filename : String, ldrText : String } -> Cmd msg
 is not shown again. The JS side writes a flag to localStorage inside a try/catch.
 -}
 port rememberHintSeen : () -> Cmd msg
+
+
+{-| Persist chosen language ("fi" or "en") to local storage.
+-}
+port storeLanguage : String -> Cmd msg

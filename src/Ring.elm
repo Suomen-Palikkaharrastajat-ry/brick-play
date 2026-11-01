@@ -32,6 +32,7 @@ so the keyboard shortcuts keep working after a click on the ring.
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes as Attr
 import Html.Events exposing (onClick)
+import I18n exposing (Language(..))
 import Math.Matrix4 as Mat4
 import Math.Vector3 as Vec3 exposing (Vec3)
 import Render.Camera as Camera exposing (Camera)
@@ -75,6 +76,7 @@ type alias Config msg =
     , canUngroup : Bool
     , step : Step.StepSize
     , coarsePointer : Bool
+    , language : Language
     , onTurn : TurnDirection -> msg
     , onRaise : msg
     , onLower : msg
@@ -313,7 +315,7 @@ mobileView : Config msg -> Html msg
 mobileView config =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Part controls"
+        , Attr.attribute "aria-label" (I18n.ringPartControls config.language)
         , Attr.attribute "data-context-ring" ""
         , Attr.style "width" "100%"
         , Attr.style "box-sizing" "border-box"
@@ -372,7 +374,7 @@ utilityRow config =
           else
             []
          )
-            ++ [ actionButton config config.onDelete "trash-2" "Delete" "Delete" ]
+            ++ [ actionButton config config.onDelete "trash-2" (I18n.ringDelete config.language) "Delete" ]
         )
 
 
@@ -382,25 +384,25 @@ actionsRow : Config msg -> Html msg
 actionsRow config =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Clipboard and grouping actions"
+        , Attr.attribute "aria-label" (I18n.ringClipboardGroup config.language)
         , Attr.style "display" "flex"
         , Attr.style "align-items" "center"
         , Attr.style "justify-content" "center"
         , Attr.style "gap" "0.25rem"
         , Attr.style "width" "100%"
         ]
-        ([ customActionButton config config.canCut config.onCut "scissors" "Cut" "Cut (Ctrl+X)"
-         , customActionButton config config.canCopy config.onCopy "copy" "Copy" "Copy (Ctrl+C)"
-         , customActionButton config config.canPaste config.onPaste "clipboard" "Paste" "Paste (Ctrl+V)"
+        ([ customActionButton config config.canCut config.onCut "scissors" (I18n.ringCut config.language) (I18n.ringCutTip config.language)
+         , customActionButton config config.canCopy config.onCopy "copy" (I18n.ringCopy config.language) (I18n.ringCopyTip config.language)
+         , customActionButton config config.canPaste config.onPaste "clipboard" (I18n.ringPaste config.language) (I18n.ringPasteTip config.language)
          ]
             ++ (if config.canGroup then
-                    [ customActionButton config config.canGroup config.onGroup "package" "Group" "Group (Ctrl+G)" ]
+                    [ customActionButton config config.canGroup config.onGroup "package" (I18n.ringGroup config.language) (I18n.ringGroupTip config.language) ]
 
                 else
                     []
                )
             ++ (if config.canUngroup then
-                    [ customActionButton config config.canUngroup config.onUngroup "minimize-2" "Ungroup" "Ungroup (Ctrl+Shift+G)" ]
+                    [ customActionButton config config.canUngroup config.onUngroup "minimize-2" (I18n.ringUngroup config.language) (I18n.ringUngroupTip config.language) ]
 
                 else
                     []
@@ -450,7 +452,7 @@ movementPad : Config msg -> Html msg
 movementPad config =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Move the part"
+        , Attr.attribute "aria-label" (I18n.ringMoveThePart config.language)
         , Attr.style "display" "grid"
         , Attr.style "grid-template-columns" "repeat(3, 2.75rem)"
         , Attr.style "grid-template-rows" "repeat(2, 2.75rem)"
@@ -458,12 +460,12 @@ movementPad config =
         , Attr.style "justify-items" "center"
         , Attr.style "align-items" "center"
         ]
-        [ padButton config config.onLower "chevrons-down" "Q" "Lower" "Lower (Q)"
-        , padButton config (config.onMove Away) "chevron-up" "W" "Move away (W)" "Move away (W)"
-        , padButton config config.onRaise "chevrons-up" "E" "Raise" "Raise (E)"
-        , padButton config (config.onMove Left) "chevron-left" "A" "Move left (A)" "Move left (A)"
-        , padButton config (config.onMove Toward) "chevron-down" "S" "Move toward (S)" "Move toward (S)"
-        , padButton config (config.onMove Right) "chevron-right" "D" "Move right (D)" "Move right (D)"
+        [ padButton config config.onLower "chevrons-down" "Q" (I18n.ringLower config.language) (I18n.ringLowerTip config.language)
+        , padButton config (config.onMove Away) "chevron-up" "W" (I18n.ringMoveAwayTip config.language) (I18n.ringMoveAwayTip config.language)
+        , padButton config config.onRaise "chevrons-up" "E" (I18n.ringRaise config.language) (I18n.ringRaiseTip config.language)
+        , padButton config (config.onMove Left) "chevron-left" "A" (I18n.ringMoveLeftTip config.language) (I18n.ringMoveLeftTip config.language)
+        , padButton config (config.onMove Toward) "chevron-down" "S" (I18n.ringMoveTowardTip config.language) (I18n.ringMoveTowardTip config.language)
+        , padButton config (config.onMove Right) "chevron-right" "D" (I18n.ringMoveRightTip config.language) (I18n.ringMoveRightTip config.language)
         ]
 
 
@@ -500,7 +502,7 @@ rotationColumn : Config msg -> Html msg
 rotationColumn config =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Rotation controls"
+        , Attr.attribute "aria-label" (I18n.ringRotationControls config.language)
         , Attr.style "display" "flex"
         , Attr.style "flex-direction" "column"
         , Attr.style "align-items" "center"
@@ -508,9 +510,9 @@ rotationColumn config =
         , Attr.style "gap" "0.125rem"
         , Attr.style "width" "2.75rem"
         ]
-        [ actionButton config (config.onTurn TurnLeft) "rotate-ccw" "Turn left" "←"
-        , actionButton config (config.onTurn TurnRight) "rotate-cw" "Turn right" "→"
-        , actionButtonWithTooltip config (config.onTurn TipForward) "corner-right-down" "Tip" "Tip forward (↑)"
+        [ actionButton config (config.onTurn TurnLeft) "rotate-ccw" (I18n.ringTurnLeft config.language) "←"
+        , actionButton config (config.onTurn TurnRight) "rotate-cw" (I18n.ringTurnRight config.language) "→"
+        , actionButtonWithTooltip config (config.onTurn TipForward) "corner-right-down" (I18n.ringTipForward config.language) (I18n.ringTipForwardTip config.language)
         ]
 
 
@@ -543,11 +545,11 @@ glueButton config =
         , onPress = config.onGlue
         , label =
             if config.glued then
-                "Glued"
+                I18n.ringGlued config.language
 
             else
-                "Glue"
-        , tooltip = "Glue the selection to the board, locked (L)"
+                I18n.ringGlue config.language
+        , tooltip = I18n.ringGlueTip config.language
         , pressed = Just config.glued
         }
         (Icon.featherSized 18
@@ -566,7 +568,7 @@ stepRow : Config msg -> Html msg
 stepRow config =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Move step"
+        , Attr.attribute "aria-label" (I18n.ringMoveStepAria config.language)
         , Attr.style "display" "inline-flex"
         , Attr.style "align-items" "center"
         , Attr.style "gap" "0.125rem"
@@ -585,9 +587,9 @@ stepSegment config size =
     in
     button
         [ Attr.type_ "button"
-        , Attr.attribute "aria-label" (stepName size)
+        , Attr.attribute "aria-label" (stepName config.language size)
         , Attr.attribute "aria-pressed" (boolText pressed)
-        , Attr.title (Step.title size)
+        , Attr.title (stepTitle config.language size)
         , onClick (config.onStep size)
         , Focus.keepFocusOnCanvas config.noOp
         , Attr.style "width" "2.25rem"
@@ -607,17 +609,30 @@ stepSegment config size =
         [ Icon.featherSized 16 (Step.icon size) ]
 
 
-stepName : Step.StepSize -> String
-stepName size =
+stepName : Language -> Step.StepSize -> String
+stepName lang size =
     case size of
         Step.Stud ->
-            "Stud step"
+            I18n.ringStudStep lang
 
         Step.HalfStud ->
-            "Half-stud step"
+            I18n.ringHalfStudStep lang
 
         Step.Bit ->
-            "Bit step"
+            I18n.ringBitStep lang
+
+
+stepTitle : Language -> Step.StepSize -> String
+stepTitle lang size =
+    case size of
+        Step.Stud ->
+            I18n.ringStudStepTip lang
+
+        Step.HalfStud ->
+            I18n.ringHalfStudStepTip lang
+
+        Step.Bit ->
+            I18n.ringBitStepTip lang
 
 
 {-| A 44 px round button. Disabled buttons are dimmed and send nothing.

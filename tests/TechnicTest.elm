@@ -836,6 +836,7 @@ testFlags =
     , supportsPointerEvents = True
     , hintSeen = False
     , coarsePointer = False
+    , language = Just "en"
     }
 
 
@@ -1302,10 +1303,11 @@ menuTests =
                 in
                 Query.fromHtml (view opened)
                     |> Expect.all
-                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 8)
+                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 9)
                         , Query.has [ Selector.text "Share editable model" ]
                         , Query.has [ Selector.text "Share parts set" ]
                         , Query.has [ Selector.text "Share fixed model" ]
+                        , Query.has [ Selector.text "Language: English (Suomeksi)" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
                         , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 5)
                         , Query.hasNot [ Selector.attribute (Attr.attribute "aria-orientation" "vertical") ]

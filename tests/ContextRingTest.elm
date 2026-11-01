@@ -13,6 +13,7 @@ import Dict
 import Expect
 import Html
 import Html.Attributes as Attr
+import I18n exposing (Language(..))
 import LDraw.Document as Document
 import LDraw.Parser as Parser
 import LDraw.Resolve exposing (PartStatus(..))
@@ -397,6 +398,7 @@ ringTests =
                     , canUngroup = False
                     , step = Step.Stud
                     , coarsePointer = False
+                    , language = En
                     , onTurn = \_ -> NoOp
                     , onRaise = NoOp
                     , onLower = NoOp
@@ -1063,6 +1065,7 @@ flagsFor hash hintSeen coarse =
     , supportsPointerEvents = True
     , hintSeen = hintSeen
     , coarsePointer = coarse
+    , language = Just "en"
     }
 
 

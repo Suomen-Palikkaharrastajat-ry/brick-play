@@ -6,6 +6,7 @@ module PlayTest exposing (suite)
 import Dict
 import Expect
 import Html.Attributes as Attr
+import I18n
 import LDraw.Document as Document
 import Main exposing (Flags, Model, Msg(..), helpRows, init, kitItemName, remainingCount, shareHash, thumbnailRequests, update, view, viewToast)
 import Math.Matrix4 as Mat4
@@ -518,6 +519,7 @@ testFlags =
     , supportsPointerEvents = True
     , hintSeen = False
     , coarsePointer = False
+    , language = Just "en"
     }
 
 
@@ -627,10 +629,11 @@ menuTests =
                 in
                 Query.fromHtml (view opened)
                     |> Expect.all
-                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 6)
+                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 7)
                         , Query.hasNot [ Selector.text "Share editable model" ]
                         , Query.has [ Selector.text "Share parts set" ]
                         , Query.hasNot [ Selector.text "Share fixed model" ]
+                        , Query.has [ Selector.text "Language: English (Suomeksi)" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
                         , Query.has [ Selector.text "Ctrl+Shift+Z" ]
                         ]
@@ -991,4 +994,73 @@ touchTests =
                     , \_ -> Query.fromHtml (view (addFirst start |> Tuple.first)) |> Query.findAll [ Selector.class "touch-only" ] |> Query.count (Expect.greaterThan 0)
                     ]
                     ()
+        , describe "Localization (i18n)"
+            [ test "defaults to Finnish when flags.language is Nothing" <|
+                \_ ->
+                    let
+                        fiFlags =
+                            { testFlags | language = Nothing }
+
+                        model =
+                            Tuple.first (init fiFlags)
+                    in
+                    Expect.equal I18n.Fi model.language
+            , test "Finnish menu shows Finnish items and toggle to English" <|
+                \_ ->
+                    let
+                        fiFlags =
+                            { testFlags | language = Nothing }
+
+                        ( opened, _ ) =
+                            update ToggleMenu (Tuple.first (init fiFlags))
+                    in
+                    Query.fromHtml (view opened)
+                        |> Expect.all
+                            [ Query.has [ Selector.text "Kieli: Suomi (In English)" ]
+                            , Query.has [ Selector.text "Lataa BrickLink Studio (.io)" ]
+                            , Query.has [ Selector.text "Kumoa" ]
+                            , Query.has [ Selector.text "Tee uudelleen" ]
+                            , Query.has [ Selector.text "Poista" ]
+                            , Query.has [ Selector.text "Tyhjennä" ]
+                            ]
+            , test "switching language updates model and menu label" <|
+                \_ ->
+                    let
+                        fiFlags =
+                            { testFlags | language = Nothing }
+
+                        ( modelFi, _ ) =
+                            init fiFlags
+
+                        ( modelEn, _ ) =
+                            update (SetLanguage I18n.En) modelFi
+
+                        ( openedEn, _ ) =
+                            update ToggleMenu modelEn
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal I18n.En modelEn.language
+                        , \_ ->
+                            Query.fromHtml (view openedEn)
+                                |> Query.has [ Selector.text "Language: English (Suomeksi)" ]
+                        ]
+                        ()
+            , test "Finnish free dock shows Finnish tab labels" <|
+                \_ ->
+                    let
+                        fiFlags =
+                            { testFlags | initialHash = "", language = Just "fi" }
+
+                        ( model, _ ) =
+                            init fiFlags
+                    in
+                    Query.fromHtml (view model)
+                        |> Expect.all
+                            [ Query.has [ Selector.text "Palikat" ]
+                            , Query.has [ Selector.text "Levyt" ]
+                            , Query.has [ Selector.text "Viistot ja laatat" ]
+                            , Query.has [ Selector.text "Kulmapalat ja SNOT" ]
+                            , Query.has [ Selector.text "Technic" ]
+                            ]
+            ]
         ]

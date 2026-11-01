@@ -271,6 +271,7 @@ flagsFor hash =
     , supportsPointerEvents = True
     , hintSeen = False
     , coarsePointer = False
+    , language = Just "en"
     }
 
 
