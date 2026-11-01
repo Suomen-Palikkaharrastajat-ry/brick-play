@@ -2073,10 +2073,10 @@ view model =
             , keepFocusOnCanvas
             ]
             [ h1 [ Attr.class "sr-only" ] [ text "Palikkakehys Play" ]
-            , HamburgerMenu.view (menuConfig model)
+            , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
             , helpButton model.language
             , if technicMode model then
-                playButton model.playing
+                playButton model.language model.playing
 
               else
                 text ""
@@ -3092,7 +3092,13 @@ kitDockView : Model -> Html Msg
 kitDockView model =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Kit"
+        , Attr.attribute "aria-label"
+            (if model.language == I18n.Fi then
+                "Sarja"
+
+             else
+                "Kit"
+            )
         , Attr.style "display" "flex"
         , Attr.style "align-items" "center"
         , Attr.style "gap" "0.5rem"
@@ -3204,7 +3210,13 @@ colourRow : Model -> Html Msg
 colourRow model =
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Colour of parts added"
+        , Attr.attribute "aria-label"
+            (if model.language == I18n.Fi then
+                "Lisättävien osien väri"
+
+             else
+                "Colour of parts added"
+            )
         , Attr.style "display" "grid"
         , Attr.style "grid-template-columns" "repeat(2, 1.125rem)"
         , Attr.style "grid-template-rows" "repeat(4, 1.125rem)"
@@ -3267,7 +3279,7 @@ tabRow : Model -> Html Msg
 tabRow model =
     div
         [ Attr.attribute "role" "tablist"
-        , Attr.attribute "aria-label" "Part categories"
+        , Attr.attribute "aria-label" (I18n.paletteCategoryPicker model.language)
         , Attr.style "display" "flex"
         , Attr.style "align-items" "center"
         , Attr.style "gap" "0.25rem"
@@ -3406,7 +3418,13 @@ cardsRow model =
     in
     div
         [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" "Parts"
+        , Attr.attribute "aria-label"
+            (if model.language == I18n.Fi then
+                "Osat"
+
+             else
+                "Parts"
+            )
         , Attr.style "display" "flex"
         , Attr.style "align-items" "center"
         , Attr.style "gap" "0.5rem"
@@ -3473,11 +3491,17 @@ helpRows model =
 {-| Play or pause the machine. Highlighted while it runs, like the old
 simulate toggle, so the state is visible at a glance.
 -}
-playButton : Bool -> Html Msg
-playButton playing =
+playButton : I18n.Language -> Bool -> Html Msg
+playButton lang playing =
     button
         [ onClick TogglePlay
-        , Attr.title "Play / pause (Space)"
+        , Attr.title
+            (if playing then
+                I18n.headerPause lang ++ " (Space)"
+
+             else
+                I18n.headerPlay lang ++ " (Space)"
+            )
         , Attr.attribute "aria-pressed"
             (if playing then
                 "true"
@@ -3515,10 +3539,10 @@ playButton playing =
         , Attr.class "touch-target"
         ]
         (if playing then
-            [ Icon.feather "pause", text "Pause" ]
+            [ Icon.feather "pause", text (I18n.headerPause lang) ]
 
          else
-            [ Icon.feather "play", text "Play" ]
+            [ Icon.feather "play", text (I18n.headerPlay lang) ]
         )
 
 

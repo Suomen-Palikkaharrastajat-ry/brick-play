@@ -13,6 +13,7 @@ import Gear.Detect as Detect
 import Gear.Phase as Phase
 import Gear.Placements as Placements
 import Html.Attributes as Attr
+import I18n
 import LDraw.Document as Document
 import LDraw.Resolve exposing (PartStatus(..))
 import Main exposing (Flags, Model, Msg(..), accomplishmentBanner, init, remainingForItem, shareHash, technicMode, thumbnailRequests, update, view, viewToast)
@@ -1500,7 +1501,18 @@ technicTests =
 
         playButtons model =
             Query.fromHtml (view model)
-                |> Query.findAll [ Selector.attribute (Attr.title "Play / pause (Space)") ]
+                |> Query.findAll
+                    [ Selector.tag "button"
+                    , Selector.containing
+                        [ Selector.text
+                            (if model.playing then
+                                I18n.headerPause model.language
+
+                             else
+                                I18n.headerPlay model.language
+                            )
+                        ]
+                    ]
 
         tabs model =
             Query.fromHtml (view model)
