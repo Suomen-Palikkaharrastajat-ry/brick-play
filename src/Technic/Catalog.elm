@@ -79,6 +79,12 @@ curatedParts =
       , category = GearsCategory
       , description = "40-tooth spur gear"
       }
+    , { name = "Turntable 28T Top"
+      , file = "99010.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "28-tooth turntable top gear"
+      }
 
     -- Beams
     , { name = "Beam 1x5"
@@ -125,6 +131,12 @@ curatedParts =
       , category = AxlesCategory
       , description = "Length 8 axle (Black)"
       }
+    , { name = "Axle 3 with Stud"
+      , file = "6587.dat"
+      , color = 0
+      , category = AxlesCategory
+      , description = "Length 3 axle with stud"
+      }
 
     -- Pins & Bushings
     , { name = "Bushing"
@@ -162,6 +174,24 @@ curatedParts =
       , color = 7
       , category = PinsCategory
       , description = "Half pin with stud"
+      }
+    , { name = "Pin 1/2 with Friction"
+      , file = "89678.dat"
+      , color = 0
+      , category = PinsCategory
+      , description = "Half pin with friction and stud"
+      }
+    , { name = "Rotor 2 Blade"
+      , file = "2711.dat"
+      , color = 0
+      , category = PinsCategory
+      , description = "Technic rotor 2 blade with studs"
+      }
+    , { name = "Rotor 3 Blade"
+      , file = "32125.dat"
+      , color = 0
+      , category = PinsCategory
+      , description = "Technic rotor 3 blade small"
       }
     ]
 

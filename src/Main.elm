@@ -2072,7 +2072,7 @@ view model =
             , Attr.style "pointer-events" "none"
             , keepFocusOnCanvas
             ]
-            [ h1 [ Attr.class "sr-only" ] [ text "Palikkakehys Play" ]
+            [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
             , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
             , helpButton model.language
             , if technicMode model then

@@ -83,6 +83,12 @@ entriesFor tab =
             , entry "3002.dat" "Brick 2 x 3" "2 x 3 brick"
             , entry "3001.dat" "Brick 2 x 4" "2 x 4 brick"
             , entry "3007.dat" "Brick 2 x 8" "2 x 8 brick"
+            , entry "6541.dat" "Technic Brick 1 x 1 with Hole" "1 x 1 brick with hole"
+            , entry "3700.dat" "Technic Brick 1 x 2 with Hole" "1 x 2 technic brick with hole"
+            , entry "3701.dat" "Technic Brick 1 x 4 with Holes" "1 x 4 technic brick with holes"
+            , entry "3894.dat" "Technic Brick 1 x 6 with Holes" "1 x 6 technic brick with holes"
+            , entry "3702.dat" "Technic Brick 1 x 8 with Holes" "1 x 8 technic brick with holes"
+            , entry "3703.dat" "Technic Brick 1 x 16 with Holes" "1 x 16 technic brick with holes"
             ]
 
         PlatesTab ->
@@ -97,6 +103,9 @@ entriesFor tab =
             , entry "3795.dat" "Plate 2 x 6" "2 x 6 plate"
             , entry "3034.dat" "Plate 2 x 8" "2 x 8 plate"
             , entry "3031.dat" "Plate 4 x 4" "4 x 4 plate"
+            , entry "3958.dat" "Plate 6 x 6" "6 x 6 plate"
+            , entry "41539.dat" "Plate 8 x 8" "8 x 8 plate"
+            , entry "3709b.dat" "Technic Plate 2 x 4 with Holes" "2 x 4 technic plate with holes"
             ]
 
         SlopesTab ->
