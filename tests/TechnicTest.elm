@@ -838,6 +838,7 @@ testFlags =
     , hintSeen = False
     , coarsePointer = False
     , language = Just "en"
+    , testApiEnabled = False
     }
 
 

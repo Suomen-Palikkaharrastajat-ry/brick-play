@@ -14,6 +14,8 @@ port module Ports exposing
     , snapshotProgress
     , snapshotReady
     , storeLanguage
+    , testCommand
+    , testReply
     , thumbnailLoaded
     )
 
@@ -22,6 +24,7 @@ pipeline (`initThumbnails` in `packages/brick-frame-viewport/runtime/thumbnail-p
 -}
 
 import Bytes exposing (Bytes)
+import Json.Decode
 import Json.Encode
 
 
@@ -96,6 +99,17 @@ port saveSnapshot : { dataUrl : String, filename : String } -> Cmd msg
 {-| Request download of the model as a BrickLink Studio `.io` archive containing `model.ldr`.
 -}
 port downloadStudioIo : { filename : String, ldrText : String } -> Cmd msg
+
+
+{-| Opt-in browser acceptance-test command. Only the dev-only JS bridge sends
+these requests (`?testApi=1`); the reply includes the request id.
+-}
+port testCommand : (Json.Decode.Value -> msg) -> Sub msg
+
+
+{-| Result of an opt-in browser acceptance-test command.
+-}
+port testReply : Json.Encode.Value -> Cmd msg
 
 
 {-| Remember in this browser that the first-selection hint has been shown, so it

@@ -52,6 +52,7 @@ flagsFor hash =
     , hintSeen = False
     , coarsePointer = False
     , language = Just "en"
+    , testApiEnabled = False
     }
 
 
@@ -67,6 +68,7 @@ flagsForBytes bytes =
     , hintSeen = False
     , coarsePointer = False
     , language = Just "en"
+    , testApiEnabled = False
     }
 
 

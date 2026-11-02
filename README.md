@@ -52,6 +52,31 @@ make dev
 make build
 ```
 
+## Browser acceptance-test bridge
+
+The Vite development server exposes an opt-in bridge for deterministic browser
+acceptance tests. Open the app with `?testApi=1`, then use
+`window.__brickPlayTest` from Playwright's host-browser page. The bridge is not
+exposed in production builds.
+
+```js
+const test = await page.evaluate(() => window.__brickPlayTest.snapshot())
+const drag = await page.evaluate(() =>
+  window.__brickPlayTest.dragLDraw(
+    { x: -20, y: -48, z: 70 }, // point on the upper group, in LDraw coordinates
+    { x: -10, y: -48, z: 50 }, // cursor destination, in LDraw coordinates
+  ),
+)
+```
+
+`snapshot()` reports main-model placement IDs and world positions, part-local
+connection points, selection, active snap target, and collisions.
+`projectLDrawPoint()` maps an LDraw point to canvas-local pixels; `mouseDown()`,
+`mouseMove()`, and `mouseUp()` provide lower-level input. These actions enter the
+same Elm viewport/update path as canvas mouse input, without relying on fragile
+browser-window coordinates. They are app-level simulated input, not OS-trusted
+browser events.
+
 ## Licensing & Trademarks
 
 - Software is open source under the MIT License (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

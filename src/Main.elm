@@ -104,8 +104,12 @@ import Html.Keyed as Keyed
 import Http
 import I18n exposing (Language(..))
 import Json.Decode as Decode
+import Json.Encode as Encode
 import LDraw.Colors as Colors
+import LDraw.Connectivity as Connectivity
 import LDraw.Document as Document
+import LDraw.Resolve as Resolve
+import LDraw.Types exposing (LDrawLine)
 import LDraw.Writer
 import Link
 import Math.Matrix4 as Mat4
@@ -159,6 +163,7 @@ type alias Flags =
     , hintSeen : Bool
     , coarsePointer : Bool
     , language : Maybe String
+    , testApiEnabled : Bool
     }
 
 
@@ -210,6 +215,7 @@ type alias Model =
     , hintSeen : Bool
     , coarsePointer : Bool
     , language : Language
+    , testApiEnabled : Bool
     , hint : Maybe Int
     , hintCounter : Int
     }
@@ -302,6 +308,7 @@ type Msg
     | SnapshotFailed String
     | SnapshotSave { dataUrl : String, filename : String }
     | SnapshotClose
+    | TestCommand Decode.Value
     | GlobePressed ( Float, Float )
     | GlobeMoved ( Float, Float )
     | GlobeReleased
@@ -454,6 +461,7 @@ init flags =
             , hintSeen = flags.hintSeen
             , coarsePointer = flags.coarsePointer
             , language = Maybe.map I18n.fromString flags.language |> Maybe.withDefault I18n.defaultLanguage
+            , testApiEnabled = flags.testApiEnabled
             , hint = Nothing
             , hintCounter = 0
             }
@@ -712,17 +720,22 @@ hashFor before after =
 -}
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    if model.tidyOpen then
-        updateTidying msg model
+    case msg of
+        TestCommand payload ->
+            runTestCommand payload model
 
-    else if closesSnapshot msg model then
-        ( { model | snapshotModal = Nothing }, cancelSnapshotCmd model.snapshotModal )
+        _ ->
+            if model.tidyOpen then
+                updateTidying msg model
 
-    else if closesRing msg model then
-        ( { model | ringPart = Nothing }, Cmd.none )
+            else if closesSnapshot msg model then
+                ( { model | snapshotModal = Nothing }, cancelSnapshotCmd model.snapshotModal )
 
-    else
-        updateApp msg model
+            else if closesRing msg model then
+                ( { model | ringPart = Nothing }, Cmd.none )
+
+            else
+                updateApp msg model
 
 
 {-| Escape closes the context ring before it deselects anything, so with the ring
@@ -949,6 +962,282 @@ updateApp msg model =
     ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, hintCmd ] )
 
 
+{-| Handle the opt-in dev browser bridge. `dragLDraw` projects world-space
+points into the same canvas coordinates used by pointer events, then feeds those
+events through `updateApp`/`Core.update` so acceptance tests exercise the normal
+selection, drag, snap, collision, and drop path.
+-}
+runTestCommand : Decode.Value -> Model -> ( Model, Cmd Msg )
+runTestCommand value model =
+    let
+        requestId =
+            Decode.decodeValue (Decode.field "id" Decode.string) value
+                |> Result.withDefault ""
+
+        commandType =
+            Decode.decodeValue (Decode.field "type" Decode.string) value
+                |> Result.withDefault ""
+
+        reply result =
+            Ports.testReply
+                (Encode.object
+                    [ ( "id", Encode.string requestId )
+                    , ( "result", result )
+                    ]
+                )
+
+        failure message =
+            Encode.object [ ( "error", Encode.string message ) ]
+
+        pointField name =
+            Decode.decodeValue (decodeTestPoint name) value
+
+        coordinateField name =
+            Decode.decodeValue (Decode.field name Decode.float) value
+
+        shiftField =
+            Decode.decodeValue (Decode.field "shift" Decode.bool) value
+                |> Result.withDefault False
+
+        mutatesDocument =
+            List.member commandType [ "mouseDown", "mouseMove", "mouseUp", "dragLDraw" ]
+    in
+    if not model.testApiEnabled then
+        ( model, reply (failure "The test bridge is disabled") )
+
+    else if mutatesDocument && model.tidyOpen then
+        ( model, reply (failure "Cannot send test input while the tidy preview is open") )
+
+    else if mutatesDocument && model.snapshotModal /= Nothing then
+        ( model, reply (failure "Cannot send test input while the snapshot modal is open") )
+
+    else
+        case commandType of
+            "snapshot" ->
+                ( model, reply (testSnapshot model) )
+
+            "projectLDrawPoint" ->
+                case pointField "point" of
+                    Ok point ->
+                        case projectLDrawPoint model point of
+                            Just ( x, y ) ->
+                                ( model, reply (encodeTestScreenPoint x y) )
+
+                            Nothing ->
+                                ( model, reply (failure "The point is outside the camera projection") )
+
+                    Err error ->
+                        ( model, reply (failure (Decode.errorToString error)) )
+
+            "mouseDown" ->
+                case ( coordinateField "x", coordinateField "y" ) of
+                    ( Ok x, Ok y ) ->
+                        let
+                            ( next, cmd ) =
+                                update
+                                    (StudioMsg
+                                        (Core.ViewportMsg
+                                            (Viewport.CanvasPressed ( 0, 0 ) (Viewport.MouseButtonDown x y 0 shiftField False))
+                                        )
+                                    )
+                                    model
+                        in
+                        ( next, Cmd.batch [ cmd, reply (testSnapshot next) ] )
+
+                    _ ->
+                        ( model, reply (failure "mouseDown requires numeric x and y") )
+
+            "mouseMove" ->
+                case ( coordinateField "x", coordinateField "y" ) of
+                    ( Ok x, Ok y ) ->
+                        let
+                            ( next, cmd ) =
+                                update (StudioMsg (Core.ViewportMsg (Viewport.MouseMove x y))) model
+                        in
+                        ( next, Cmd.batch [ cmd, reply (testSnapshot next) ] )
+
+                    _ ->
+                        ( model, reply (failure "mouseMove requires numeric x and y") )
+
+            "mouseUp" ->
+                case ( coordinateField "x", coordinateField "y" ) of
+                    ( Ok x, Ok y ) ->
+                        let
+                            ( next, cmd ) =
+                                update (StudioMsg (Core.ViewportMsg (Viewport.MouseUp x y))) model
+                        in
+                        ( next, Cmd.batch [ cmd, reply (testSnapshot next) ] )
+
+                    _ ->
+                        ( model, reply (failure "mouseUp requires numeric x and y") )
+
+            "dragLDraw" ->
+                case ( pointField "from", pointField "to" ) of
+                    ( Ok fromPoint, Ok toPoint ) ->
+                        testDragLDraw requestId fromPoint toPoint model
+
+                    ( Err error, _ ) ->
+                        ( model, reply (failure (Decode.errorToString error)) )
+
+                    ( _, Err error ) ->
+                        ( model, reply (failure (Decode.errorToString error)) )
+
+            _ ->
+                ( model, reply (failure ("Unknown test command: " ++ commandType)) )
+
+
+{-| Project an LDraw-space point into canvas-local coordinates.
+-}
+projectLDrawPoint : Model -> Vec3 -> Maybe ( Float, Float )
+projectLDrawPoint model point =
+    Gizmo.project
+        model.studio.viewport.camera
+        model.studio.viewport.width
+        model.studio.viewport.height
+        (Gizmo.toRender point)
+
+
+decodeTestPoint : String -> Decode.Decoder Vec3
+decodeTestPoint name =
+    Decode.field name
+        (Decode.map3 Vec3.vec3
+            (Decode.field "x" Decode.float)
+            (Decode.field "y" Decode.float)
+            (Decode.field "z" Decode.float)
+        )
+
+
+encodeTestScreenPoint : Float -> Float -> Encode.Value
+encodeTestScreenPoint x y =
+    Encode.object
+        [ ( "x", Encode.float x )
+        , ( "y", Encode.float y )
+        ]
+
+
+encodeTestVector : Vec3 -> Encode.Value
+encodeTestVector vector =
+    Encode.object
+        [ ( "x", Encode.float (Vec3.getX vector) )
+        , ( "y", Encode.float (Vec3.getY vector) )
+        , ( "z", Encode.float (Vec3.getZ vector) )
+        ]
+
+
+testSnapshot : Model -> Encode.Value
+testSnapshot model =
+    let
+        placementValue placement =
+            let
+                connections =
+                    Connectivity.extractPartConnectivity placement.part (testResolvedLines model)
+                        |> .connections
+                        |> List.map
+                            (\connection ->
+                                Encode.object
+                                    [ ( "id", Encode.int connection.id )
+                                    , ( "localPosition", encodeTestVector connection.localPosition )
+                                    , ( "normal", encodeTestVector connection.normal )
+                                    ]
+                            )
+            in
+            Encode.object
+                [ ( "id", Encode.int placement.id )
+                , ( "part", Encode.string placement.part )
+                , ( "position", encodeTestVector (Mat4.transform placement.matrix (Vec3.vec3 0 0 0)) )
+                , ( "glued", Encode.bool (Core.isGlued placement.id model.studio) )
+                , ( "connections", Encode.list identity connections )
+                ]
+
+        snapValue =
+            case model.studio.activeSnap of
+                Just snap ->
+                    Encode.object
+                        [ ( "draggedPointId", Encode.int snap.draggedPoint.id )
+                        , ( "draggedLocalPosition", encodeTestVector snap.draggedPoint.localPosition )
+                        , ( "targetPlacementId", Encode.int snap.targetPlacementId )
+                        , ( "targetPointId", Encode.int snap.targetPoint.pointId )
+                        , ( "targetWorldPosition", encodeTestVector snap.targetWorldPosition )
+                        , ( "distance", Encode.float snap.distance )
+                        ]
+
+                Nothing ->
+                    Encode.null
+    in
+    Encode.object
+        [ ( "mainPlacements", Encode.list placementValue (Document.mainPlacements model.studio.document) )
+        , ( "selection", Encode.list Encode.int (Set.toList model.studio.selection) )
+        , ( "viewport"
+          , Encode.object
+                [ ( "width", Encode.int model.studio.viewport.width )
+                , ( "height", Encode.int model.studio.viewport.height )
+                ]
+          )
+        , ( "dragging", Encode.bool (model.studio.drag /= Nothing) )
+        , ( "activeSnap", snapValue )
+        , ( "collidingPlacements", Encode.list Encode.int (Set.toList model.studio.collidingPlacements) )
+        ]
+
+
+testResolvedLines : Model -> String -> Maybe (List LDrawLine)
+testResolvedLines model name =
+    case Dict.get name model.studio.viewport.partCache of
+        Just (Resolve.Loaded lines) ->
+            Just lines
+
+        _ ->
+            Nothing
+
+
+testDragLDraw : String -> Vec3 -> Vec3 -> Model -> ( Model, Cmd Msg )
+testDragLDraw requestId fromPoint toPoint model =
+    case ( projectLDrawPoint model fromPoint, projectLDrawPoint model toPoint ) of
+        ( Just ( startX, startY ), Just ( endX, endY ) ) ->
+            let
+                pressEvent =
+                    Viewport.CanvasPressed ( 0, 0 ) (Viewport.MouseButtonDown startX startY 0 False False)
+
+                ( pressed, pressCmd ) =
+                    update (StudioMsg (Core.ViewportMsg pressEvent)) model
+
+                ( moved, moveCmd ) =
+                    update (StudioMsg (Core.ViewportMsg (Viewport.MouseMove endX endY))) pressed
+
+                preview =
+                    testSnapshot moved
+
+                ( released, releaseCmd ) =
+                    update (StudioMsg (Core.ViewportMsg (Viewport.MouseUp endX endY))) moved
+
+                result =
+                    Encode.object
+                        [ ( "projectedFrom", encodeTestScreenPoint startX startY )
+                        , ( "projectedTo", encodeTestScreenPoint endX endY )
+                        , ( "preview", preview )
+                        , ( "final", testSnapshot released )
+                        ]
+
+                reply =
+                    Ports.testReply
+                        (Encode.object
+                            [ ( "id", Encode.string requestId )
+                            , ( "result", result )
+                            ]
+                        )
+            in
+            ( released, Cmd.batch [ pressCmd, moveCmd, releaseCmd, reply ] )
+
+        _ ->
+            ( model
+            , Ports.testReply
+                (Encode.object
+                    [ ( "id", Encode.string requestId )
+                    , ( "result", Encode.object [ ( "error", Encode.string "A drag point is outside the camera projection" ) ] )
+                    ]
+                )
+            )
+
+
 {-| The first-selection hint: the first time a part is selected, and the hint
 has not been seen in this browser, it shows in the top-left bar for five seconds
 and is remembered as seen. Any selection counts, however it was made.
@@ -1152,6 +1441,9 @@ startPlaying model =
 step : Msg -> Model -> ( Model, Cmd Msg )
 step msg model =
     case msg of
+        TestCommand _ ->
+            ( model, Cmd.none )
+
         StudioMsg studioMsg ->
             let
                 ( nextStudio, studioCmd, events ) =
@@ -2028,6 +2320,7 @@ subscriptions model =
         , Ports.snapshotReady SnapshotReady
         , Ports.snapshotProgress SnapshotProgress
         , Ports.snapshotFailed SnapshotFailed
+        , Ports.testCommand TestCommand
         , if model.playing then
             Browser.Events.onAnimationFrameDelta Tick
 

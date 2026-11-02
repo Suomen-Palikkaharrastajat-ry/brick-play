@@ -52,6 +52,8 @@ function rememberHintSeen() {
 // Touch screens say "Double-tap" in the hint; pointer devices say "Double-click".
 const coarsePointer =
   typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+const testApiEnabled =
+  import.meta.env.DEV && new URLSearchParams(window.location.search).get('testApi') === '1'
 
 // Tab selects parts, so it must not move focus while the canvas has it. Form
 // fields and controls keep Tab for moving focus.
@@ -80,7 +82,7 @@ const runtime = initBricksRuntime({
   ldrawFallbackBase: import.meta.env.VITE_LDRAW_FALLBACK_BASE ?? '',
   defaultModel: '',
   loadModelInJs: false,
-  extraFlags: { hintSeen: readHintSeen(), coarsePointer, language: readLanguage() },
+  extraFlags: { hintSeen: readHintSeen(), coarsePointer, language: readLanguage(), testApiEnabled },
   initialHash: window.location.hash ?? '',
   syncUrlHash: true,
   useWindowResize: true,
@@ -89,6 +91,38 @@ const runtime = initBricksRuntime({
 })
 
 runtime.app?.ports?.rememberHintSeen?.subscribe(rememberHintSeen)
+
+// A test-only bridge for deterministic browser acceptance tests. It is opt-in,
+// only present in Vite development mode, and routes pointer events through the
+// same Elm viewport/update path as the interactive canvas.
+if (testApiEnabled && runtime.app?.ports?.testCommand && runtime.app?.ports?.testReply) {
+  let nextTestRequest = 0
+  const waitingForTestReply = new Map()
+
+  runtime.app.ports.testReply.subscribe((reply) => {
+    const resolve = waitingForTestReply.get(reply.id)
+    if (resolve) {
+      waitingForTestReply.delete(reply.id)
+      resolve(reply.result)
+    }
+  })
+
+  const sendTestCommand = (type, payload = {}) =>
+    new Promise((resolve) => {
+      const id = `brick-play-test-${++nextTestRequest}`
+      waitingForTestReply.set(id, resolve)
+      runtime.app.ports.testCommand.send({ id, type, ...payload })
+    })
+
+  window.__brickPlayTest = Object.freeze({
+    snapshot: () => sendTestCommand('snapshot'),
+    projectLDrawPoint: (point) => sendTestCommand('projectLDrawPoint', { point }),
+    dragLDraw: (from, to) => sendTestCommand('dragLDraw', { from, to }),
+    mouseDown: (x, y, shift = false) => sendTestCommand('mouseDown', { x, y, shift }),
+    mouseMove: (x, y) => sendTestCommand('mouseMove', { x, y }),
+    mouseUp: (x, y) => sendTestCommand('mouseUp', { x, y }),
+  })
+}
 
 runtime.app?.ports?.storeLanguage?.subscribe((lang) => {
   try {
