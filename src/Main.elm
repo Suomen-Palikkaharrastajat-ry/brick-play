@@ -28,7 +28,8 @@ space pans and a right-drag orbits. A double-click (or double-tap) on a part
 opens its context ring (`Ring`), a cluster of round buttons beside the part that
 turns, tips, raises, lowers and deletes it, glues it (free building), and moves it
 with a W A S D Q E pad. The ring's move step (`Step`: Stud, ½ stud, or Bit) also
-sets the keyboard nudges and body drags. Tab and Shift+Tab select the next or
+sets the keyboard nudges and body drags. Shift+drag prefers the closest snap
+candidate. Tab and Shift+Tab select the next or
 previous part, and W A S D Q E move the selected part (the camera moves when
 nothing is selected). The camera has its own control bottom-right, the shared
 camera globe (`UI.CameraGlobe`): drag it to orbit, tap it to fly there, and use
@@ -65,7 +66,7 @@ edit stops a running machine and rewinds it to 0.
 
 The top-left toolbar holds the menu (`UI.HamburgerMenu` — share options, download
 .io, undo, redo, delete and clear), a visible ? button that opens the shortcut
-list, the play button (in Technic mode), and any temporary info pills (Shift · Bit,
+list, the play button (in Technic mode), and any temporary info pills (Bit step,
 Tidy up, gear mesh status, first-select hint, touch part name, and the
 accomplishment banner), growing horizontally so the vertical space above the
 brick palette stays completely free. Escape closes the menu first. An opened link
@@ -290,7 +291,7 @@ type Msg
     | LowerSelection
     | MoveSelection StudioShortcuts.NudgeDirection
     | SetStepSize Step.StepSize
-    | ToggleDragShift
+    | ToggleBitDrag
     | OpenRing Int
     | CloseRing
     | SelectNeighbour Bool
@@ -1574,22 +1575,21 @@ step msg model =
             , Cmd.none
             )
 
-        ToggleDragShift ->
+        ToggleBitDrag ->
             let
                 active =
-                    Core.shiftHeld model.studio || Core.fineMove model.studio
+                    Core.fineMove model.studio
 
                 nextStep =
-                    if active && model.stepSize == Step.Bit then
+                    if active then
                         Step.Stud
 
                     else
-                        model.stepSize
+                        Step.Bit
 
                 nextStudio =
                     model.studio
                         |> Step.apply nextStep
-                        |> Core.setShiftHeld (not active)
             in
             ( { model | stepSize = nextStep, studio = nextStudio }
             , Cmd.none
@@ -2348,7 +2348,7 @@ view model =
         , Attr.style "font-family" "var(--font-sans)"
         ]
         [ -- Top-left toolbar and status bar: the menu, help and play buttons sit at
-          -- the top left, and temporary info pills (Shift · Bit, Tidy up, gear mesh
+          -- the top left, and temporary info pills (Bit drag, Tidy up, gear mesh
           -- status, first-select hint, touch part name, and accomplishment banner)
           -- grow horizontally beside them, keeping the vertical space above the
           -- brick palette free.
@@ -2373,7 +2373,7 @@ view model =
 
               else
                 text ""
-            , shiftDragRow model
+            , bitDragRow model
             , tidyRow model
             , if technicMode model then
                 gearRow model
@@ -2754,19 +2754,19 @@ bottomArea model =
         ]
 
 
-{-| The Shift · Bit toggle pill shown in the top-left toolbar whenever a movable
-brick is selected or being dragged: tapping or holding it switches body drags to
-1-LDU bit-dragging without magnetic snapping.
+{-| The Bit-drag toggle pill shown in the top-left toolbar whenever a movable
+brick is selected or being dragged: it switches body drags to 1-LDU movement
+without magnetic snapping. Shift+drag separately prefers the nearest snap.
 -}
-shiftDragRow : Model -> Html Msg
-shiftDragRow model =
+bitDragRow : Model -> Html Msg
+bitDragRow model =
     if not (Core.selectionMovable model.studio || Core.isDragging model.studio) then
         text ""
 
     else
         let
             active =
-                Core.shiftHeld model.studio || Core.fineMove model.studio
+                Core.fineMove model.studio
         in
         div
             [ Attr.style "display" "flex"
@@ -2774,11 +2774,11 @@ shiftDragRow model =
             , Attr.style "max-width" "100%"
             ]
             [ button
-                [ onClick ToggleDragShift
-                , preventDefaultOn "touchstart" (Decode.succeed ( ToggleDragShift, True ))
+                [ onClick ToggleBitDrag
+                , preventDefaultOn "touchstart" (Decode.succeed ( ToggleBitDrag, True ))
                 , keepFocusOnCanvas
-                , Attr.attribute "data-shift-drag" ""
-                , Attr.attribute "aria-label" (I18n.ringShiftBitTip model.language)
+                , Attr.attribute "data-bit-drag" ""
+                , Attr.attribute "aria-label" (I18n.ringBitStepTip model.language)
                 , Attr.attribute "aria-pressed"
                     (if active then
                         "true"
@@ -2786,7 +2786,7 @@ shiftDragRow model =
                      else
                         "false"
                     )
-                , Attr.title (I18n.ringShiftBitTip model.language)
+                , Attr.title (I18n.ringBitStepTip model.language)
                 , Attr.class "touch-target"
                 , Attr.style "pointer-events" "auto"
                 , Attr.style "display" "inline-flex"
@@ -2823,7 +2823,7 @@ shiftDragRow model =
                 , Attr.style "cursor" "pointer"
                 ]
                 [ Icon.featherSized 16 "crosshair"
-                , span [] [ text (I18n.ringShiftBitPill model.language) ]
+                , span [] [ text (I18n.ringBitStep model.language) ]
                 ]
             ]
 

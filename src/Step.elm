@@ -13,8 +13,9 @@ and body drags. It is the segmented control in the ring (Stud, ½ stud, Bit):
   - `Stud`: 20 LDU sideways and 24 LDU (one brick) up or down. The default.
   - `HalfStud`: 10 LDU sideways and 8 LDU (one plate) up or down, a deliberate
     half-stud offset.
-  - `Bit`: 1 LDU on every axis, the fine move that Shift gives for a single key
-    or drag.
+  - `Bit`: 1 LDU on every axis, the fine move selected by the Bit-drag toggle.
+    It moves freely without magnetic snapping; Shift+drag instead prefers the
+    closest snap candidate.
 
 `apply` writes the choice into the studio (`Studio.Core.setNudgeSteps` and
 `setFineMove`), so keys, the ring and body drags all follow it. The choice lives
@@ -82,7 +83,7 @@ title size =
             "Half-stud step: 10 LDU sideways, 8 LDU up and down"
 
         Bit ->
-            "Bit step: 1 LDU on every axis (Shift is a temporary bit step)"
+            "Bit step: 1 LDU on every axis (free movement, no magnetic snap)"
 
 
 {-| Set the studio's move steps and fine mode to a step.

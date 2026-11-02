@@ -271,7 +271,7 @@ closeTests =
                 openRing builtWithOneBrick
                     |> send ToggleMenu
                     |> (\m -> Expect.equal Nothing m.ringPart)
-        , test "selecting a movable brick shows the Shift · Bit button in the top-left toolbar, which toggles shiftHeld and resets on drag release" <|
+        , test "selecting a movable brick shows the Bit-drag button in the top-left toolbar, which enables unsnapped fine movement" <|
             \_ ->
                 let
                     unselected =
@@ -280,11 +280,11 @@ closeTests =
                     ( x, y ) =
                         screenCentre builtWithOneBrick
 
-                    shifted =
-                        send ToggleDragShift builtWithOneBrick
+                    bitMode =
+                        send ToggleBitDrag builtWithOneBrick
 
                     dragging =
-                        shifted
+                        bitMode
                             |> send (StudioMsg (Core.ViewportMsg (Viewport.TouchStart [ { id = 1, x = x, y = y } ])))
                             |> send (StudioMsg (Core.ViewportMsg (Viewport.TouchMove [ { id = 1, x = x + 30, y = y } ])))
 
@@ -296,22 +296,22 @@ closeTests =
                         unselected
                             |> view
                             |> Query.fromHtml
-                            |> Query.findAll [ Selector.attribute (Attr.attribute "data-shift-drag" "") ]
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "data-bit-drag" "") ]
                             |> Query.count (Expect.equal 0)
                     , \_ ->
                         builtWithOneBrick
                             |> view
                             |> Query.fromHtml
-                            |> Query.find [ Selector.attribute (Attr.attribute "data-shift-drag" "") ]
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-bit-drag" "") ]
                             |> Query.has [ Selector.attribute (Attr.attribute "aria-pressed" "false") ]
-                    , \_ -> Expect.equal True (Core.shiftHeld shifted.studio)
+                    , \_ -> Expect.equal True (Core.fineMove bitMode.studio)
                     , \_ ->
-                        shifted
+                        bitMode
                             |> view
                             |> Query.fromHtml
-                            |> Query.find [ Selector.attribute (Attr.attribute "data-shift-drag" "") ]
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-bit-drag" "") ]
                             |> Query.has [ Selector.attribute (Attr.attribute "aria-pressed" "true") ]
-                    , \_ -> Expect.equal False (Core.shiftHeld released.studio)
+                    , \_ -> Expect.equal True (Core.fineMove released.studio)
                     ]
                     ()
         , test "on mobile (narrow window), opening the context ring replaces the bottom palette with the context toolbar" <|
@@ -346,11 +346,11 @@ closeTests =
                         opened
                             |> view
                             |> Query.fromHtml
-                            |> Query.find [ Selector.attribute (Attr.attribute "data-shift-drag" "") ]
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-bit-drag" "") ]
                             |> Query.has [ Selector.attribute (Attr.attribute "aria-pressed" "false") ]
                     ]
                     ()
-        , test "the top-left header holds the menu, help, Shift · Bit, Tidy up and hint pills so space above the palette stays free" <|
+        , test "the top-left header holds the menu, help, Bit step, Tidy up and hint pills so space above the palette stays free" <|
             \_ ->
                 let
                     withProblems =
@@ -367,7 +367,7 @@ closeTests =
                 Expect.all
                     [ \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Menu") ] |> Query.count (Expect.equal 1)
                     , \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Keyboard shortcuts (?)") ] |> Query.count (Expect.equal 1)
-                    , \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "data-shift-drag" "") ] |> Query.count (Expect.equal 1)
+                    , \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "data-bit-drag" "") ] |> Query.count (Expect.equal 1)
                     , \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "data-tidy-pill" "") ] |> Query.count (Expect.equal 1)
                     , \_ -> headerNode |> Query.findAll [ Selector.attribute (Attr.attribute "data-play-hint" "") ] |> Query.count (Expect.equal 1)
                     ]
