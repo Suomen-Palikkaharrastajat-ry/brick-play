@@ -2135,12 +2135,17 @@ step msg model =
                             else
                                 payload.document
 
-                        updatedStudio =
+                        ( resetStudio, studioCmd, _ ) =
                             Core.resetDocument doc model.studio
+
+                        updatedStudio =
+                            resetStudio
                                 |> Core.setGlueEditable False
                                 |> Core.clearSelection
                     in
-                    ( { model | studio = updatedStudio }, Cmd.none )
+                    ( { model | studio = updatedStudio }
+                    , Cmd.map StudioMsg studioCmd
+                    )
 
                 Nothing ->
                     ( model, Cmd.none )
