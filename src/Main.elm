@@ -1322,11 +1322,22 @@ ringClosed model =
     in
     case clearedTap.ringPart of
         Just id ->
-            if clearedTap.tidyOpen || clearedTap.menuOpen || partDragged clearedTap || not (Set.member id clearedTap.studio.selection) then
+            if clearedTap.tidyOpen || clearedTap.menuOpen || partDragged clearedTap || Set.isEmpty clearedTap.studio.selection then
                 { clearedTap | ringPart = Nothing }
 
-            else
+            else if Set.member id clearedTap.studio.selection then
                 clearedTap
+
+            else if Core.shiftHeld clearedTap.studio then
+                case Set.toList clearedTap.studio.selection of
+                    nextId :: _ ->
+                        { clearedTap | ringPart = Just nextId }
+
+                    [] ->
+                        { clearedTap | ringPart = Nothing }
+
+            else
+                { clearedTap | ringPart = Nothing }
 
         Nothing ->
             clearedTap

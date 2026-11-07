@@ -225,6 +225,54 @@ closeTests =
                             { opened | studio = { s | selection = Set.fromList [ 0, 1 ] } }
                 in
                 Expect.equal (Just 0) multi.ringPart
+        , test "shift-clicking another brick keeps context ring open and allows Group action" <|
+            \_ ->
+                let
+                    -- Built with two bricks, ring open on brick 0
+                    opened =
+                        openRing builtWithTwoBricks
+
+                    -- Shift key held down
+                    withShift =
+                        pressShift "Shift" opened
+
+                    -- Multi-selection now includes brick 1 (shift-click)
+                    withBoth =
+                        send (StudioMsg (Core.Select (Set.fromList [ 0, 1 ]))) withShift
+
+                    -- View shows enabled Group button
+                    ringView =
+                        view withBoth
+                            |> Query.fromHtml
+
+                    grouped =
+                        send Group withBoth
+                in
+                Expect.all
+                    [ \_ -> Expect.equal (Just 0) withBoth.ringPart
+                    , \_ -> Expect.equal (Set.fromList [ 0, 1 ]) withBoth.studio.selection
+                    , \_ ->
+                        ringView
+                            |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect Group
+                    , \_ -> Expect.equal 1 (List.length (Document.mainPlacements grouped.studio.document))
+                    ]
+                    ()
+        , test "shift-deselecting the ring part transitions context ring to the remaining selected part" <|
+            \_ ->
+                let
+                    opened =
+                        openRing builtWithTwoBricks
+
+                    withShift =
+                        pressShift "Shift" opened
+
+                    -- Brick 0 deselected, brick 1 remains selected with Shift held
+                    toggled =
+                        send (StudioMsg (Core.Select (Set.singleton 1))) withShift
+                in
+                Expect.equal (Just 1) toggled.ringPart
         , test "starting to drag the part closes it" <|
             \_ ->
                 let
