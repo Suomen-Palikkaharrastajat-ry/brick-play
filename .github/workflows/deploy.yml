@@ -19,6 +19,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_SIGNALING_URL: ${{ vars.VITE_SIGNALING_URL }}
     steps:
       - name: Configure Git for HTTPS
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"

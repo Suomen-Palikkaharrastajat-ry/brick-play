@@ -78,7 +78,7 @@ const initialHash = window.location.hash ?? ''
 const watchMatch = initialHash.match(/^#\/(?:watch|live)\/([A-Za-z0-9]{4,16})/i)
 const isViewer = Boolean(watchMatch)
 const viewerRoomId = watchMatch ? watchMatch[1].toUpperCase() : null
-const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'https://signaling.palikkaharrastajat.fi'
+const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'https://broadcast-signaling.palikkaharrastajat.workers.dev'
 
 const runtime = initBricksRuntime({
   elm: Elm.Main,

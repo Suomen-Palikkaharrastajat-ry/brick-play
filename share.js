@@ -7,7 +7,7 @@
 const DEFAULT_SIGNALING_URL = (
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL
     ? import.meta.env.VITE_SIGNALING_URL
-    : ''
+    : 'https://broadcast-signaling.palikkaharrastajat.workers.dev'
 ).replace(/\/+$/, '')
 
 export const DEFAULT_ICE = [
