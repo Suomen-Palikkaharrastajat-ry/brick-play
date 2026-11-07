@@ -551,6 +551,39 @@ glueTests =
                             |> addFree "3001.dat" 14
                 in
                 Expect.equal [ 0 ] (gluedIds model)
+        , test "unlocking lock unlocks all selected bricks whether they are part of a group or not" <|
+            \_ ->
+                let
+                    -- Add two bricks, lock the first, group them together, then add a third brick and lock it too.
+                    withGroupAndStandalone =
+                        open "#free=1"
+                            |> addFree "3001.dat" 14
+                            |> update ToggleGlue
+                            |> Tuple.first
+                            |> addFree "3001.dat" 4
+                            |> (\m -> { m | studio = Core.selectAll m.studio })
+                            |> update Group
+                            |> Tuple.first
+                            |> addFree "3003.dat" 1
+                            |> update ToggleGlue
+                            |> Tuple.first
+
+                    allSelected =
+                        { withGroupAndStandalone | studio = Core.selectAll withGroupAndStandalone.studio }
+
+                    unlocked =
+                        update ToggleGlue allSelected |> Tuple.first
+
+                    undone =
+                        update Undo unlocked |> Tuple.first
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True (Core.selectionGlued allSelected.studio)
+                    , \_ -> Expect.equal False (Core.selectionGlued unlocked.studio)
+                    , \_ -> Expect.equal [] (gluedIds unlocked)
+                    , \_ -> Expect.equal (gluedIds allSelected) (gluedIds undone)
+                    ]
+                    ()
         ]
 
 
