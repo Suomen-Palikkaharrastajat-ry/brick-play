@@ -2120,7 +2120,7 @@ step msg model =
             ( { model | liveViewerCount = count }, Cmd.none )
 
         BroadcastError err ->
-            ( withToast err model, Cmd.none )
+            showToast err model
 
         LiveSnapshotReceived bytes ->
             case HashPayload.decodeBytes bytes of
@@ -2149,7 +2149,7 @@ step msg model =
             ( { model | viewerStatus = status }, Cmd.none )
 
         LiveError err ->
-            ( withToast err model, Cmd.none )
+            showToast err model
 
         DismissToast id ->
             if Maybe.map .id model.toast == Just id then
@@ -2181,6 +2181,22 @@ step msg model =
               }
             , Cmd.none
             )
+
+
+{-| Show a temporary toast message for 3 seconds.
+-}
+showToast : String -> Model -> ( Model, Cmd Msg )
+showToast message model =
+    let
+        nextId =
+            model.toastCounter + 1
+    in
+    ( { model
+        | toast = Just { message = message, id = nextId }
+        , toastCounter = nextId
+      }
+    , Process.sleep 3000 |> Task.perform (\_ -> DismissToast nextId)
+    )
 
 
 {-| Copy a share link payload to the clipboard, close the menu and show a toast.
