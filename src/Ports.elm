@@ -10,9 +10,11 @@ port module Ports exposing
     , downloadStudioIo
     , geometryFlattenFailed
     , geometryFlattened
+    , liveAnimationReceived
     , liveError
     , liveSnapshotReceived
     , liveStatusChanged
+    , pushLiveAnimation
     , pushLiveSnapshot
     , rememberHintSeen
     , requestGeometryFlatten
@@ -154,6 +156,11 @@ port stopBroadcast : () -> Cmd msg
 port pushLiveSnapshot : List Int -> Cmd msg
 
 
+{-| Broadcaster: Send updated animation playing state to all connected viewers.
+-}
+port pushLiveAnimation : Bool -> Cmd msg
+
+
 {-| Broadcaster: Received from JS when room is established.
 -}
 port broadcastStarted : ({ roomId : String, watchUrl : String } -> msg) -> Sub msg
@@ -177,6 +184,11 @@ port broadcastError : (String -> msg) -> Sub msg
 {-| Viewer: Received full HashPayload binary update from broadcaster.
 -}
 port liveSnapshotReceived : (List Int -> msg) -> Sub msg
+
+
+{-| Viewer: Received animation playing state from broadcaster.
+-}
+port liveAnimationReceived : (Bool -> msg) -> Sub msg
 
 
 {-| Viewer: Connection state ("connecting", "live", "reconnecting", "ended").

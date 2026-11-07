@@ -50,6 +50,7 @@ suite =
         , snapshotTests
         , shareModalTests
         , sharingAndToastTests
+        , liveSharingTests
         , touchTests
         , dockPlacementTests
         , test "initial inventory has 10 bricks available" <|
@@ -841,6 +842,99 @@ sharingAndToastTests =
                 Expect.all
                     [ \_ -> Expect.equal True (Core.hasClipboard copiedModel.studio)
                     , \_ -> Expect.equal 2 (List.length (Core.getPlacements pastedModel.studio))
+                    ]
+                    ()
+        ]
+
+
+liveSharingTests : Test
+liveSharingTests =
+    describe "Live sharing and viewer mode"
+        [ test "viewer mode omits the snapshot button from globe control" <|
+            \_ ->
+                let
+                    ( viewerModel, _ ) =
+                        init { testFlags | initialHash = "#/watch/ABCD123" }
+
+                    ( normalModel, _ ) =
+                        init testFlags
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view viewerModel)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "aria-label" (I18n.cameraRealistic viewerModel.language)) ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" (I18n.cameraTakeSnapshot viewerModel.language)) ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view normalModel)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "aria-label" (I18n.cameraRealistic normalModel.language)) ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-label" (I18n.cameraTakeSnapshot normalModel.language)) ]
+                                ]
+                    ]
+                    ()
+        , test "CaptureSnapshot is ignored in viewer mode" <|
+            \_ ->
+                let
+                    ( viewerModel, _ ) =
+                        init { testFlags | initialHash = "#/watch/ABCD123" }
+
+                    ( afterSnapshot, _ ) =
+                        update CaptureSnapshot viewerModel
+                in
+                Expect.equal Nothing afterSnapshot.snapshotModal
+        , test "TogglePlay is ignored in viewer mode" <|
+            \_ ->
+                let
+                    ( viewerModel, _ ) =
+                        init { testFlags | initialHash = "#/watch/ABCD123" }
+
+                    ( docWithGear, _ ) =
+                        Document.addPlacement "" { part = "3647.dat", color = 7, matrix = Mat4.identity } Document.empty
+
+                    bytes =
+                        HashPayload.encodeBytes
+                            { mode = HashPayload.FreeBuilding
+                            , document = docWithGear
+                            , kit = Nothing
+                            }
+
+                    ( modelWithGear, _ ) =
+                        update (LiveSnapshotReceived bytes) viewerModel
+
+                    ( afterToggle, _ ) =
+                        update TogglePlay modelWithGear
+                in
+                Expect.equal False afterToggle.playing
+        , test "LiveAnimationReceived plays and stops animation in Technic mode" <|
+            \_ ->
+                let
+                    ( viewerModel, _ ) =
+                        init { testFlags | initialHash = "#/watch/ABCD123" }
+
+                    ( docWithGear, _ ) =
+                        Document.addPlacement "" { part = "3647.dat", color = 7, matrix = Mat4.identity } Document.empty
+
+                    bytes =
+                        HashPayload.encodeBytes
+                            { mode = HashPayload.FreeBuilding
+                            , document = docWithGear
+                            , kit = Nothing
+                            }
+
+                    ( modelWithGear, _ ) =
+                        update (LiveSnapshotReceived bytes) viewerModel
+
+                    ( playingModel, _ ) =
+                        update (LiveAnimationReceived True) modelWithGear
+
+                    ( stoppedModel, _ ) =
+                        update (LiveAnimationReceived False) playingModel
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True playingModel.playing
+                    , \_ -> Expect.equal False stoppedModel.playing
                     ]
                     ()
         ]

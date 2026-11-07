@@ -232,6 +232,14 @@ if (runtime.app?.ports?.pushLiveSnapshot) {
   })
 }
 
+if (runtime.app?.ports?.pushLiveAnimation) {
+  runtime.app.ports.pushLiveAnimation.subscribe((playing) => {
+    if (broadcaster) {
+      broadcaster.pushAnimation(playing)
+    }
+  })
+}
+
 let viewer = null
 if (isViewer && viewerRoomId) {
   viewer = new Viewer(
@@ -239,6 +247,7 @@ if (isViewer && viewerRoomId) {
     viewerRoomId,
     {
       onSnapshot: (bytes) => runtime.app?.ports?.liveSnapshotReceived?.send(bytes),
+      onAnimation: (playing) => runtime.app?.ports?.liveAnimationReceived?.send(playing),
       onStatus: (status) => runtime.app?.ports?.liveStatusChanged?.send(status),
       onError: (err) => runtime.app?.ports?.liveError?.send(err),
     }

@@ -546,6 +546,55 @@ test('Broadcaster lifecycle and status reporting', async (t) => {
     b.stop()
   })
 
+  await t.test('pushAnimation sends animation state to open data channels', async () => {
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerAnim' })
+    const dc = b.dcs.get('viewerAnim')
+    dc.dispatchEvent('open', {})
+
+    b.pushAnimation(true)
+    assert.equal(dc.sent.length, 1)
+    assert.deepEqual(JSON.parse(dc.sent[0]), { type: 'animation', playing: true })
+
+    b.pushAnimation(false)
+    assert.equal(dc.sent.length, 2)
+    assert.deepEqual(JSON.parse(dc.sent[1]), { type: 'animation', playing: false })
+
+    b.stop()
+  })
+
+  await t.test('flushes latest animation state when data channel opens', async () => {
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    const testBytes = [10, 20, 30]
+    const startPromise = b.start(testBytes, true)
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerJoinPlay' })
+    const dc = b.dcs.get('viewerJoinPlay')
+    dc.dispatchEvent('open', {})
+
+    assert.equal(dc.sent.length, 2)
+    assert.deepEqual(JSON.parse(dc.sent[0]), { type: 'snapshot', bytes: testBytes })
+    assert.deepEqual(JSON.parse(dc.sent[1]), { type: 'animation', playing: true })
+
+    b.stop()
+  })
+
   await t.test('push sends chunks when payload exceeds 48 KB', async () => {
     const b = new Broadcaster({
       signalingUrl: 'https://sig.example.com',
@@ -718,6 +767,37 @@ test('Viewer lifecycle, chunk handling and error reporting', async (t) => {
     assert.deepEqual(receivedSnapshots, [testBytes])
     assert.ok(statuses.includes('live'))
 
+    v.stop()
+  })
+
+  await t.test('receives animation message on data channel and fires onAnimation', async () => {
+    const receivedAnimations = []
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: 'TEST1234',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onAnimation: (playing) => receivedAnimations.push(playing),
+    })
+
+    await v.start()
+    v.ws.simulateOpen()
+    await v.ws.simulateMessage({
+      type: 'offer',
+      offer: { type: 'offer', sdp: 'mock-offer-sdp' },
+    })
+
+    const dc = new MockDataChannel(DATA_CHANNEL)
+    v.pc.dispatchEvent('datachannel', { channel: dc })
+
+    dc.dispatchEvent('message', {
+      data: JSON.stringify({ type: 'animation', playing: true }),
+    })
+    dc.dispatchEvent('message', {
+      data: JSON.stringify({ type: 'animation', playing: false }),
+    })
+
+    assert.deepEqual(receivedAnimations, [true, false])
     v.stop()
   })
 

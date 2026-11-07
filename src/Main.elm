@@ -390,6 +390,7 @@ type Msg
     | BroadcastViewersChanged Int
     | BroadcastError String
     | LiveSnapshotReceived (List Int)
+    | LiveAnimationReceived Bool
     | LiveStatusChanged String
     | LiveError String
     | DismissToast Int
@@ -1108,10 +1109,17 @@ updateApp msg model =
             else
                 Cmd.none
 
+        liveAnimationCmd =
+            if settled.liveBroadcasting && model.playing /= settled.playing then
+                Ports.pushLiveAnimation settled.playing
+
+            else
+                Cmd.none
+
         ( hinted, hintCmd ) =
             withHint settled
     in
-    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, liveCmd, hintCmd ] )
+    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, liveCmd, liveAnimationCmd, hintCmd ] )
 
 
 {-| Handle the opt-in dev browser bridge. `dragLDraw` projects world-space
@@ -1639,7 +1647,8 @@ step msg model =
 
         TogglePlay ->
             -- Outside Technic mode there is no machine, so Space is unbound.
-            if not (technicMode model) then
+            -- In viewer mode, the animation is driven by the broadcaster.
+            if model.viewerRoom /= Nothing || not (technicMode model) then
                 ( model, Cmd.none )
 
             else if model.playing then
@@ -1806,15 +1815,19 @@ step msg model =
             )
 
         CaptureSnapshot ->
-            ( { model | snapshotModal = Just (SnapshotModal.init { filename = "brick-play-render.png" }) }
-            , Ports.captureRender
-                (Viewport.snapshotRequest
-                    { filename = "brick-play-render.png"
-                    , extraTriangles = snapshotTriangles model
-                    }
-                    model.studio.viewport
+            if model.viewerRoom /= Nothing then
+                ( model, Cmd.none )
+
+            else
+                ( { model | snapshotModal = Just (SnapshotModal.init { filename = "brick-play-render.png" }) }
+                , Ports.captureRender
+                    (Viewport.snapshotRequest
+                        { filename = "brick-play-render.png"
+                        , extraTriangles = snapshotTriangles model
+                        }
+                        model.studio.viewport
+                    )
                 )
-            )
 
         SnapshotReady payload ->
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setReady payload) model.snapshotModal }
@@ -2108,7 +2121,10 @@ step msg model =
                 , liveRoomId = Just roomId
                 , liveWatchUrl = Just watchUrl
               }
-            , Ports.pushLiveSnapshot snapshotBytes
+            , Cmd.batch
+                [ Ports.pushLiveSnapshot snapshotBytes
+                , Ports.pushLiveAnimation model.playing
+                ]
             )
 
         BroadcastStopped ->
@@ -2149,6 +2165,17 @@ step msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        LiveAnimationReceived playing ->
+            if playing then
+                if technicMode model then
+                    ( startPlaying model, Cmd.none )
+
+                else
+                    ( model, Cmd.none )
+
+            else
+                ( { model | playing = False }, Cmd.none )
 
         LiveStatusChanged status ->
             ( { model | viewerStatus = status }, Cmd.none )
@@ -2682,6 +2709,7 @@ subscriptions model =
         , Ports.broadcastViewersChanged BroadcastViewersChanged
         , Ports.broadcastError BroadcastError
         , Ports.liveSnapshotReceived LiveSnapshotReceived
+        , Ports.liveAnimationReceived LiveAnimationReceived
         , Ports.liveStatusChanged LiveStatusChanged
         , Ports.liveError LiveError
         , if model.playing then
@@ -3468,19 +3496,21 @@ realistic-rendering and snapshot buttons.
 -}
 globeControl : Model -> Html Msg
 globeControl model =
-    CameraGlobe.viewWithLight (Core.lightDirection model.studio)
-        { camera = model.studio.viewport.camera
-        , onPress = GlobePressed
-        , onMove = GlobeMoved
-        , onRelease = GlobeReleased
-        , onZoom = ZoomTo
-        , onZoomDone = ZoomDone
-        , onReset = ResetView
-        , extras =
-            [ div
-                [ keepFocusOnCanvas
-                , Attr.style "display" "contents"
+    let
+        extras =
+            if model.viewerRoom /= Nothing then
+                [ Button.icon
+                    { icon = Icon.feather "sun"
+                    , label = I18n.cameraRealistic model.language
+                    , shortcut = Nothing
+                    , pressed = Just (Core.renderQuality model.studio == Style.Realistic)
+                    , enabled = True
+                    , showLabel = False
+                    }
+                    ToggleRealistic
                 ]
+
+            else
                 [ Button.icon
                     { icon = Icon.feather "sun"
                     , label = I18n.cameraRealistic model.language
@@ -3500,6 +3530,21 @@ globeControl model =
                     }
                     CaptureSnapshot
                 ]
+    in
+    CameraGlobe.viewWithLight (Core.lightDirection model.studio)
+        { camera = model.studio.viewport.camera
+        , onPress = GlobePressed
+        , onMove = GlobeMoved
+        , onRelease = GlobeReleased
+        , onZoom = ZoomTo
+        , onZoomDone = ZoomDone
+        , onReset = ResetView
+        , extras =
+            [ div
+                [ keepFocusOnCanvas
+                , Attr.style "display" "contents"
+                ]
+                extras
             ]
         }
 

@@ -240,6 +240,7 @@ export class Broadcaster {
     this.optsIceServers = !!opts.iceServers
     this.iceConfig = { iceServers: opts.iceServers || DEFAULT_ICE, bundlePolicy: 'max-bundle' }
     this.latestBytes = undefined
+    this.latestAnimation = undefined
     this.stopped = false
     this.opened = false
     this.rejectConnect = undefined
@@ -258,8 +259,9 @@ export class Broadcaster {
     return `#watch=${this.roomId}`
   }
 
-  async start(initialBytes) {
+  async start(initialBytes, initialAnimation) {
     if (initialBytes !== undefined) this.latestBytes = initialBytes
+    if (initialAnimation !== undefined) this.latestAnimation = Boolean(initialAnimation)
     const icePromise = (!this.optsIceServers && this.signalingUrl)
       ? getIceConfig(this.signalingUrl)
       : Promise.resolve(this.iceConfig)
@@ -361,6 +363,23 @@ export class Broadcaster {
     }
   }
 
+  pushAnimation(playing) {
+    this.latestAnimation = Boolean(playing)
+    for (const dc of this.dcs.values()) {
+      this.sendAnimation(dc, this.latestAnimation)
+    }
+  }
+
+  sendAnimation(dc, playing) {
+    if (!dc || dc.readyState !== 'open') return
+    const payload = { type: 'animation', playing: Boolean(playing) }
+    try {
+      dc.send(JSON.stringify(payload))
+    } catch {
+      // ignore send error
+    }
+  }
+
   sendSnapshot(dc, bytes) {
     if (!dc || dc.readyState !== 'open') return
     const normalized = normalizeBytes(bytes)
@@ -450,6 +469,9 @@ export class Broadcaster {
     dc.addEventListener('open', () => {
       if (this.latestBytes !== undefined && this.latestBytes !== null) {
         this.sendSnapshot(dc, this.latestBytes)
+      }
+      if (this.latestAnimation !== undefined && this.latestAnimation !== null) {
+        this.sendAnimation(dc, this.latestAnimation)
       }
     })
 
@@ -551,6 +573,7 @@ export class Viewer {
     this.signalingUrl = (opts.signalingUrl || DEFAULT_SIGNALING_URL || '').replace(/\/+$/, '')
     this.roomId = opts.roomId || ''
     this.onSnapshot = opts.onSnapshot || (() => {})
+    this.onAnimation = opts.onAnimation || (() => {})
     this.onStatus = opts.onStatus || (() => {})
     this.onError = opts.onError || (() => {})
     this.WebSocketClass = opts.WebSocket || (typeof globalThis !== 'undefined' ? globalThis.WebSocket : undefined)
@@ -651,16 +674,26 @@ export class Viewer {
               const bytes = msg.bytes !== undefined ? msg.bytes : msg.data
               this.onSnapshot(bytes)
               this.onStatus('live')
+            } else if (msg.type === 'animation') {
+              if (typeof msg.playing === 'boolean') {
+                this.onAnimation(msg.playing)
+              }
             } else if (msg.type === 'chunk') {
               const full = this.reassembler.addChunk(msg)
               if (full !== null) {
                 try {
                   const parsed = JSON.parse(full)
-                  const bytes = (parsed && typeof parsed === 'object' && 'bytes' in parsed)
-                    ? parsed.bytes
-                    : ((parsed && typeof parsed === 'object' && 'data' in parsed) ? parsed.data : parsed)
-                  this.onSnapshot(bytes)
-                  this.onStatus('live')
+                  if (parsed && typeof parsed === 'object') {
+                    if (parsed.type === 'animation') {
+                      if (typeof parsed.playing === 'boolean') {
+                        this.onAnimation(parsed.playing)
+                      }
+                    } else {
+                      const bytes = parsed.bytes !== undefined ? parsed.bytes : (parsed.data !== undefined ? parsed.data : parsed)
+                      this.onSnapshot(bytes)
+                      this.onStatus('live')
+                    }
+                  }
                 } catch {
                   // ignore malformed chunk json
                 }
