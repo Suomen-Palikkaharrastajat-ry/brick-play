@@ -1403,8 +1403,7 @@ withTidy model =
 
 
 {-| Technic mode turns on gear alignment (a meshing gear turns its axle line so
-the teeth interlock) and stops drags from settling to the ground, so gear and
-axle axes stay on the axle line. Plain Brick Play has neither.
+the teeth interlock). Drag settling is off in both modes so parts keep their plane height.
 -}
 withTechnicSettings : Model -> Model
 withTechnicSettings model =
@@ -1416,7 +1415,7 @@ withTechnicSettings model =
         | studio =
             model.studio
                 |> Core.setGearAlignment technic
-                |> Core.setDragSettles (not technic)
+                |> Core.setDragSettles False
     }
 
 

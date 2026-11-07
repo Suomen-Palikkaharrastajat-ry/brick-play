@@ -16,7 +16,7 @@ Turn left, Turn right, Tip, Raise, Lower and Delete buttons, Glue (free building
 only), a 3×2 movement pad (QWE / ASD), and the move-step control (`Step.StepSize`: Stud,
 ½ stud, Bit).
 
-The ring is a compact 224×192 px pod of 44 px touch buttons. `panelPosition`
+The ring is a compact 232×232 px pod of 40 px touch buttons. `panelPosition`
 places it beside the part's screen rectangle (its projected bounding box), 12 px
 to the right, flipped to the left, then above or below when neither side has room.
 It is kept inside the canvas and clear of the dock and camera globe when it can be.
@@ -97,14 +97,14 @@ type alias Config msg =
 -}
 panelWidth : Float
 panelWidth =
-    224
+    232
 
 
 {-| The ring's height in pixels, for keeping it inside the canvas.
 -}
 panelHeight : Float
 panelHeight =
-    192
+    232
 
 
 {-| The gap, in pixels, between a part's screen rectangle and the ring.
@@ -289,11 +289,11 @@ view config =
                 , Attr.style "width" (px panelWidth)
                 , Attr.style "height" (px panelHeight)
                 , Attr.style "box-sizing" "border-box"
-                , Attr.style "padding" "0.375rem"
-                , Attr.style "display" "flex"
-                , Attr.style "flex-direction" "column"
-                , Attr.style "justify-content" "space-between"
-                , Attr.style "align-items" "center"
+                , Attr.style "padding" "0.5rem"
+                , Attr.style "display" "grid"
+                , Attr.style "grid-template-columns" "repeat(5, 2.5rem)"
+                , Attr.style "grid-template-rows" "repeat(5, 2.5rem)"
+                , Attr.style "gap" "0.25rem"
                 , Attr.style "background" "rgba(5, 19, 29, 0.68)"
                 , Attr.style "backdrop-filter" "blur(6px)"
                 , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
@@ -302,10 +302,7 @@ view config =
                 , Attr.style "pointer-events" "auto"
                 , Attr.style "z-index" "12"
                 ]
-                [ headerRow config
-                , actionsRow config
-                , mainControlsPod config
-                ]
+                (gridItems config)
 
 
 {-| The context toolbar on mobile, replacing the bottom palette while a part's
@@ -317,25 +314,23 @@ mobileView config =
         [ Attr.attribute "role" "group"
         , Attr.attribute "aria-label" (I18n.ringPartControls config.language)
         , Attr.attribute "data-context-ring" ""
-        , Attr.style "width" "100%"
+        , Attr.style "width" (px panelWidth)
+        , Attr.style "height" (px panelHeight)
         , Attr.style "box-sizing" "border-box"
         , Attr.style "padding" "0.5rem"
-        , Attr.style "display" "flex"
-        , Attr.style "flex-direction" "column"
-        , Attr.style "justify-content" "space-between"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "0.375rem"
+        , Attr.style "display" "grid"
+        , Attr.style "grid-template-columns" "repeat(5, 2.5rem)"
+        , Attr.style "grid-template-rows" "repeat(5, 2.5rem)"
+        , Attr.style "gap" "0.25rem"
         , Attr.style "background" "rgba(5, 19, 29, 0.82)"
         , Attr.style "backdrop-filter" "blur(10px)"
         , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
         , Attr.style "border-radius" "1rem"
         , Attr.style "box-shadow" "0 20px 25px -5px rgba(0, 0, 0, 0.5)"
         , Attr.style "pointer-events" "auto"
+        , Attr.style "margin" "0 auto"
         ]
-        [ headerRow config
-        , actionsRow config
-        , mainControlsPod { config | coarsePointer = True }
-        ]
+        (gridItems { config | coarsePointer = True })
 
 
 px : Float -> String
@@ -343,71 +338,68 @@ px value =
     String.fromInt (round value) ++ "px"
 
 
-{-| The top header row: step size selector pill and utility actions (Glue, Delete).
--}
-headerRow : Config msg -> Html msg
-headerRow config =
-    div
-        [ Attr.style "display" "flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "justify-content" "space-between"
-        , Attr.style "width" "100%"
-        , Attr.style "gap" "0.25rem"
+gridItems : Config msg -> List (Html msg)
+gridItems config =
+    [ -- Row 0
+      stepSegment config Step.Stud
+    , stepSegment config Step.HalfStud
+    , stepSegment config Step.Bit
+    , if config.free then
+        glueButton config
+
+      else
+        emptyPlaceholder
+    , actionButton config config.onDelete "trash-2" (I18n.ringDelete config.language) "Delete"
+
+    -- Row 1
+    , customActionButton config config.canCut config.onCut "scissors" (I18n.ringCut config.language) (I18n.ringCutTip config.language)
+    , customActionButton config config.canCopy config.onCopy "copy" (I18n.ringCopy config.language) (I18n.ringCopyTip config.language)
+    , customActionButton config config.canPaste config.onPaste "clipboard" (I18n.ringPaste config.language) (I18n.ringPasteTip config.language)
+    , emptyPlaceholder
+    , groupOrUngroupButton config
+
+    -- Row 2
+    , emptyPlaceholder
+    , emptyPlaceholder
+    , emptyPlaceholder
+    , emptyPlaceholder
+    , actionButton config (config.onTurn TurnLeft) "rotate-ccw" (I18n.ringTurnLeft config.language) "←"
+
+    -- Row 3
+    , padButton config config.onLower "chevrons-down" "Q" (I18n.ringLower config.language) (I18n.ringLowerTip config.language)
+    , padButton config (config.onMove Away) "chevron-up" "W" (I18n.ringMoveAwayTip config.language) (I18n.ringMoveAwayTip config.language)
+    , padButton config config.onRaise "chevrons-up" "E" (I18n.ringRaise config.language) (I18n.ringRaiseTip config.language)
+    , emptyPlaceholder
+    , actionButton config (config.onTurn TurnRight) "rotate-cw" (I18n.ringTurnRight config.language) "→"
+
+    -- Row 4
+    , padButton config (config.onMove Left) "chevron-left" "A" (I18n.ringMoveLeftTip config.language) (I18n.ringMoveLeftTip config.language)
+    , padButton config (config.onMove Toward) "chevron-down" "S" (I18n.ringMoveTowardTip config.language) (I18n.ringMoveTowardTip config.language)
+    , padButton config (config.onMove Right) "chevron-right" "D" (I18n.ringMoveRightTip config.language) (I18n.ringMoveRightTip config.language)
+    , emptyPlaceholder
+    , actionButtonWithTooltip config (config.onTurn TipForward) "corner-right-down" (I18n.ringTipForward config.language) (I18n.ringTipForwardTip config.language)
+    ]
+
+
+groupOrUngroupButton : Config msg -> Html msg
+groupOrUngroupButton config =
+    if config.canGroup then
+        customActionButton config True config.onGroup "package" (I18n.ringGroup config.language) (I18n.ringGroupTip config.language)
+
+    else if config.canUngroup then
+        customActionButton config True config.onUngroup "minimize-2" (I18n.ringUngroup config.language) (I18n.ringUngroupTip config.language)
+
+    else
+        customActionButton config False config.noOp "package" (I18n.ringGroup config.language) (I18n.ringGroupTip config.language)
+
+
+emptyPlaceholder : Html msg
+emptyPlaceholder =
+    span
+        [ Attr.style "width" "2.5rem"
+        , Attr.style "height" "2.5rem"
         ]
-        [ stepRow config
-        , utilityRow config
-        ]
-
-
-{-| The utility actions: Glue toggle (free building only) and Delete.
--}
-utilityRow : Config msg -> Html msg
-utilityRow config =
-    div
-        [ Attr.style "display" "flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "0.25rem"
-        ]
-        ((if config.free then
-            [ glueButton config ]
-
-          else
-            []
-         )
-            ++ [ actionButton config config.onDelete "trash-2" (I18n.ringDelete config.language) "Delete" ]
-        )
-
-
-{-| The clipboard and grouping actions row (Cut, Copy, Paste, Group, Ungroup).
--}
-actionsRow : Config msg -> Html msg
-actionsRow config =
-    div
-        [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" (I18n.ringClipboardGroup config.language)
-        , Attr.style "display" "flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "justify-content" "center"
-        , Attr.style "gap" "0.25rem"
-        , Attr.style "width" "100%"
-        ]
-        ([ customActionButton config config.canCut config.onCut "scissors" (I18n.ringCut config.language) (I18n.ringCutTip config.language)
-         , customActionButton config config.canCopy config.onCopy "copy" (I18n.ringCopy config.language) (I18n.ringCopyTip config.language)
-         , customActionButton config config.canPaste config.onPaste "clipboard" (I18n.ringPaste config.language) (I18n.ringPasteTip config.language)
-         ]
-            ++ (if config.canGroup then
-                    [ customActionButton config config.canGroup config.onGroup "package" (I18n.ringGroup config.language) (I18n.ringGroupTip config.language) ]
-
-                else
-                    []
-               )
-            ++ (if config.canUngroup then
-                    [ customActionButton config config.canUngroup config.onUngroup "minimize-2" (I18n.ringUngroup config.language) (I18n.ringUngroupTip config.language) ]
-
-                else
-                    []
-               )
-        )
+        []
 
 
 customActionButton : Config msg -> Bool -> msg -> String -> String -> String -> Html msg
@@ -423,52 +415,14 @@ customActionButton config enabled msg icon label tooltip =
         (Icon.featherSized 18 icon)
 
 
-{-| The main controls pod: a 3×2 movement pad on the left (QWE / ASD) and
-a rotation column on the right (Turn left, Turn right, Tip).
--}
-mainControlsPod : Config msg -> Html msg
-mainControlsPod config =
-    div
-        [ Attr.style "display" "flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "justify-content" "space-between"
-        , Attr.style "width" "100%"
-        ]
-        [ movementPad config
-        , rotationColumn config
-        ]
-
-
-{-| Symmetric 3×2 movement pad:
-Row 1: Lower (Q), Move away (W), Raise (E)
-Row 2: Move left (A), Move toward (S), Move right (D)
+{-| Symmetric 3×2 movement pad buttons:
+Lower (Q), Move away (W), Raise (E), Move left (A), Move toward (S), Move right (D).
 
 On desktop (`coarsePointer` False), the buttons show keyboard characters
 ("Q", "W", "E", "A", "S", "D"). On touch/mobile devices (`coarsePointer` True),
 they show directional arrow icons.
 
 -}
-movementPad : Config msg -> Html msg
-movementPad config =
-    div
-        [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" (I18n.ringMoveThePart config.language)
-        , Attr.style "display" "grid"
-        , Attr.style "grid-template-columns" "repeat(3, 2.75rem)"
-        , Attr.style "grid-template-rows" "repeat(2, 2.75rem)"
-        , Attr.style "gap" "0.25rem"
-        , Attr.style "justify-items" "center"
-        , Attr.style "align-items" "center"
-        ]
-        [ padButton config config.onLower "chevrons-down" "Q" (I18n.ringLower config.language) (I18n.ringLowerTip config.language)
-        , padButton config (config.onMove Away) "chevron-up" "W" (I18n.ringMoveAwayTip config.language) (I18n.ringMoveAwayTip config.language)
-        , padButton config config.onRaise "chevrons-up" "E" (I18n.ringRaise config.language) (I18n.ringRaiseTip config.language)
-        , padButton config (config.onMove Left) "chevron-left" "A" (I18n.ringMoveLeftTip config.language) (I18n.ringMoveLeftTip config.language)
-        , padButton config (config.onMove Toward) "chevron-down" "S" (I18n.ringMoveTowardTip config.language) (I18n.ringMoveTowardTip config.language)
-        , padButton config (config.onMove Right) "chevron-right" "D" (I18n.ringMoveRightTip config.language) (I18n.ringMoveRightTip config.language)
-        ]
-
-
 padButton : Config msg -> msg -> String -> String -> String -> String -> Html msg
 padButton config msg icon char label tooltip =
     roundButton
@@ -494,26 +448,6 @@ padButtonContent coarsePointer icon char =
             , Attr.style "line-height" "1"
             ]
             [ text char ]
-
-
-{-| Right rotation column: Turn left (rotate-ccw), Turn right (rotate-cw), and Tip (corner-right-down).
--}
-rotationColumn : Config msg -> Html msg
-rotationColumn config =
-    div
-        [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" (I18n.ringRotationControls config.language)
-        , Attr.style "display" "flex"
-        , Attr.style "flex-direction" "column"
-        , Attr.style "align-items" "center"
-        , Attr.style "justify-content" "center"
-        , Attr.style "gap" "0.125rem"
-        , Attr.style "width" "2.75rem"
-        ]
-        [ actionButton config (config.onTurn TurnLeft) "rotate-ccw" (I18n.ringTurnLeft config.language) "←"
-        , actionButton config (config.onTurn TurnRight) "rotate-cw" (I18n.ringTurnRight config.language) "→"
-        , actionButtonWithTooltip config (config.onTurn TipForward) "corner-right-down" (I18n.ringTipForward config.language) (I18n.ringTipForwardTip config.language)
-        ]
 
 
 actionButton : Config msg -> msg -> String -> String -> String -> Html msg
@@ -562,23 +496,6 @@ glueButton config =
         )
 
 
-{-| The move-step control: three round icon buttons for Stud, ½ stud, Bit.
--}
-stepRow : Config msg -> Html msg
-stepRow config =
-    div
-        [ Attr.attribute "role" "group"
-        , Attr.attribute "aria-label" (I18n.ringMoveStepAria config.language)
-        , Attr.style "display" "inline-flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "0.125rem"
-        , Attr.style "padding" "0.125rem"
-        , Attr.style "border-radius" "9999px"
-        , Attr.style "background" "rgba(255, 255, 255, 0.08)"
-        ]
-        (List.map (stepSegment config) Step.all)
-
-
 stepSegment : Config msg -> Step.StepSize -> Html msg
 stepSegment config size =
     let
@@ -592,10 +509,10 @@ stepSegment config size =
         , Attr.title (stepTitle config.language size)
         , onClick (config.onStep size)
         , Focus.keepFocusOnCanvas config.noOp
-        , Attr.style "width" "2.25rem"
-        , Attr.style "height" "2.25rem"
-        , Attr.style "min-width" "2.25rem"
-        , Attr.style "min-height" "2.25rem"
+        , Attr.style "width" "2.5rem"
+        , Attr.style "height" "2.5rem"
+        , Attr.style "min-width" "2.5rem"
+        , Attr.style "min-height" "2.5rem"
         , Attr.style "padding" "0"
         , Attr.style "border" "none"
         , Attr.style "border-radius" "9999px"
@@ -635,7 +552,7 @@ stepTitle lang size =
             I18n.ringBitStepTip lang
 
 
-{-| A 44 px round button. Disabled buttons are dimmed and send nothing.
+{-| A 40 px round button. Disabled buttons are dimmed and send nothing.
 -}
 roundButton :
     { noOp : msg
@@ -654,10 +571,10 @@ roundButton spec content =
          , Attr.title spec.tooltip
          , Attr.disabled (not spec.enabled)
          , Focus.keepFocusOnCanvas spec.noOp
-         , Attr.style "width" "2.75rem"
-         , Attr.style "height" "2.75rem"
-         , Attr.style "min-width" "2.75rem"
-         , Attr.style "min-height" "2.75rem"
+         , Attr.style "width" "2.5rem"
+         , Attr.style "height" "2.5rem"
+         , Attr.style "min-width" "2.5rem"
+         , Attr.style "min-height" "2.5rem"
          , Attr.style "padding" "0"
          , Attr.style "display" "flex"
          , Attr.style "align-items" "center"

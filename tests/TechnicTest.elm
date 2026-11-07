@@ -1575,14 +1575,14 @@ technicTests =
                         update Clear playing |> Tuple.first
                 in
                 Expect.equal ( True, False, 0 ) ( playing.playing, cleared.playing, cleared.currentTime )
-        , test "gear alignment and drag settling follow Technic mode" <|
+        , test "gear alignment follows Technic mode while drag settling stays off" <|
             \_ ->
                 let
                     cleared =
                         update Clear withGears |> Tuple.first
                 in
                 Expect.equal
-                    [ ( True, False ), ( False, True ), ( False, True ) ]
+                    [ ( True, False ), ( False, False ), ( False, False ) ]
                     [ ( withGears.studio.gearAlignment, withGears.studio.dragSettles )
                     , ( cleared.studio.gearAlignment, cleared.studio.dragSettles )
                     , ( start.studio.gearAlignment, start.studio.dragSettles )

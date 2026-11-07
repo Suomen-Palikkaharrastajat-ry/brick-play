@@ -576,7 +576,7 @@ ringTests =
                             |> Event.expect Group
                     ]
                     ()
-        , test "mobile toolbar does not show Group or Ungroup on single regular part" <|
+        , test "mobile toolbar shows disabled Group button on single regular part" <|
             \_ ->
                 let
                     single =
@@ -588,8 +588,8 @@ ringTests =
                 Expect.all
                     [ \_ ->
                         single
-                            |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
-                            |> Query.count (Expect.equal 0)
+                            |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Group") ]
+                            |> Query.has [ Selector.attribute (Attr.disabled True) ]
                     , \_ ->
                         single
                             |> Query.findAll [ Selector.attribute (Attr.attribute "aria-label" "Ungroup") ]
@@ -987,12 +987,12 @@ layoutTests =
             \_ ->
                 Ring.panelPosition
                     { part = screenBox 100 300 160 400, canvas = ( 1000, 800 ), avoid = [] }
-                    |> Expect.equal ( 172, 254 )
+                    |> Expect.equal ( 172, 234 )
         , test "the ring flips to the left of a part near the right edge" <|
             \_ ->
                 Ring.panelPosition
                     { part = screenBox 900 300 960 400, canvas = ( 1000, 800 ), avoid = [] }
-                    |> Expect.equal ( 664, 254 )
+                    |> Expect.equal ( 656, 234 )
         , test "the ring clamps inside the top of the canvas" <|
             \_ ->
                 Ring.panelPosition
@@ -1002,7 +1002,7 @@ layoutTests =
             \_ ->
                 Ring.panelPosition
                     { part = screenBox 100 780 160 800, canvas = ( 1000, 800 ), avoid = [] }
-                    |> Expect.equal ( 172, 600 )
+                    |> Expect.equal ( 172, 560 )
         , test "the ring moves above a part when the right side would cover the dock" <|
             \_ ->
                 let
@@ -1011,7 +1011,7 @@ layoutTests =
                 in
                 Ring.panelPosition
                     { part = screenBox 100 400 160 500, canvas = ( 1000, 800 ), avoid = [ dock ] }
-                    |> Expect.equal ( 18, 196 )
+                    |> Expect.equal ( 14, 156 )
         , test "the canvas centre projects to the centre of the canvas" <|
             \_ ->
                 let
