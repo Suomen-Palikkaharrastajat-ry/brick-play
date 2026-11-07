@@ -116,10 +116,10 @@ every other part becomes a kit count, grouped by file and colour.
 freeSharePayload : Document -> List Int
 freeSharePayload doc =
     let
-        unglued =
-            ungluedPlacements doc
+        ungluedLeaves =
+            leafUngluedPlacements doc
     in
-    puzzlePayload (gluedOnlyDocument doc) (HashPayload.kitOfPlacements unglued)
+    puzzlePayload (gluedOnlyDocument doc) (HashPayload.kitOfPlacements ungluedLeaves)
 
 
 {-| The parts set a set build shares: its glued parts stay on the board, any
@@ -159,12 +159,19 @@ fixedModelPayload doc =
 ungluedPlacements : Document -> List Document.Placement
 ungluedPlacements doc =
     Document.placements doc
-        |> List.filter (\placement -> not (Document.isGlued placement.id doc))
+        |> List.filter (\placement -> not (Document.isPlacementGlued placement.id doc))
+
+
+leafUngluedPlacements : Document -> List Document.Placement
+leafUngluedPlacements doc =
+    ungluedPlacements doc
+        |> List.filter (\placement -> not (Document.isSubmodelReference placement doc))
 
 
 gluedOnlyDocument : Document -> Document
 gluedOnlyDocument doc =
     List.foldl (\placement acc -> Document.removePlacement placement.id acc) doc (ungluedPlacements doc)
+        |> Document.pruneUnreferencedSubmodels
 
 
 glueAllDocument : Document -> Document

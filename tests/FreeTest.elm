@@ -12,7 +12,7 @@ import Json.Encode as Encode
 import LDraw.Document as Document
 import LDraw.Writer as Writer
 import Link
-import Main exposing (Flags, Model, Msg(..), hashFor, helpRows, init, remainingCount, remainingForItem, shareHash, update, view)
+import Main exposing (Flags, Model, Msg(..), clearable, hashFor, helpRows, init, remainingCount, remainingForItem, shareHash, update, view)
 import Set
 import Studio.Core as Core
 import Studio.HashPayload as HashPayload
@@ -40,14 +40,27 @@ suite =
         ]
 
 
+userScenarioBytes : List Int
+userScenarioBytes =
+    [ 66, 70, 1, 12, 3, 13, 115, 117, 98, 109, 111, 100, 101, 108, 49, 46, 108, 100, 114, 4, 51, 48, 51, 57, 4, 51, 48, 48, 51, 3, 16, 0, 0, 0, 4, 0, 1, 0, 0, 0, 0, 40, 71, 39, 1, 0, 1, 1, 0, 40, 143, 1, 19, 1, 13, 115, 117, 98, 109, 111, 100, 101, 108, 49, 46, 108, 100, 114, 0, 0, 2, 0, 2, 2, 0, 0, 24, 0, 2, 2, 0, 0, 47, 0 ]
+
+
 {-| Flags for a hash, which may start with `#`.
 -}
 flagsFor : String -> Flags
 flagsFor hash =
+    let
+        initialBytes =
+            if hash == "#b/c3Jj5GHmLS5Nys1PSc0x1MtJKWIxNjC2BBIGxswCDAwMLAyMQJJBw12dkYGRkUGjn1GYEVUDAwMTAxMTA4MEmNRnAAA" then
+                Just userScenarioBytes
+
+            else
+                Nothing
+    in
     { ldrawBase = "/ldraw"
     , ldrawFallbackBase = ""
     , initialHash = hash
-    , initialBytes = Nothing
+    , initialBytes = initialBytes
     , supportsPointerEvents = True
     , hintSeen = False
     , coarsePointer = False
@@ -744,6 +757,96 @@ shareTests =
                     , \m -> Expect.equal [ 0, 1 ] (gluedIds m)
                     ]
                     fixedText
+        , test "sharing a model with a glued group keeps constituent parts in submodel on board and puts only loose parts into kit" <|
+            \_ ->
+                let
+                    userHash =
+                        "#b/c3Jj5GHmLS5Nys1PSc0x1MtJKWIxNjC2BBIGxswCDAwMLAyMQJJBw12dkYGRkUGjn1GYEVUDAwMTAxMTA4MEmNRnAAA"
+
+                    model =
+                        open userHash
+
+                    sharedBytes =
+                        shareHash model
+                in
+                case HashPayload.decodeBytes sharedBytes of
+                    Just payload ->
+                        let
+                            openedShared =
+                                openBytes sharedBytes
+
+                            black3039 =
+                                { part = "3039.dat", color = 0, count = 1 }
+
+                            red3003 =
+                                { part = "3003.dat", color = 4, count = 0 }
+                        in
+                        Expect.all
+                            -- Sharing as parts set leaves red 3003 bricks placed, grouped and locked in submodel1.ldr
+                            [ \_ -> Expect.equal (Just [ black3039 ]) payload.kit
+                            , \_ -> Expect.equal [ "main.ldr", "submodel1.ldr" ] (List.map .name payload.document.submodels)
+                            , \_ -> Expect.equal 1 (List.length (Document.mainPlacements payload.document))
+                            , \_ -> Expect.equal 2 (List.length (Document.placementsOf "submodel1.ldr" payload.document))
+                            , \_ -> Expect.equal True (Document.isPlacementGlued 0 payload.document)
+                            , \_ -> Expect.equal True (Document.isPlacementGlued 1 payload.document)
+                            , \_ -> Expect.equal True (Document.isPlacementGlued 2 payload.document)
+
+                            -- Opening shared URL shows 1/1 for black 3039, 0 for red 3003, and clearable == False
+                            , \_ -> Expect.equal False openedShared.free
+                            , \_ -> Expect.equal 1 (remainingForItem openedShared black3039)
+                            , \_ -> Expect.equal 0 (remainingForItem openedShared red3003)
+                            , \_ -> Expect.equal False (clearable openedShared)
+                            ]
+                            ()
+
+                    Nothing ->
+                        Expect.fail "Failed to decode sharedBytes"
+        , test "sharing a model with an unglued group puts its leaf parts into kit and prunes the submodel" <|
+            \_ ->
+                let
+                    mpd =
+                        String.join "\n"
+                            [ "0 FILE main.ldr"
+                            , "0 !PALIKKA GLUED"
+                            , "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat"
+                            , "1 16 100 0 0 1 0 0 0 1 0 0 0 1 unglued_group.ldr"
+                            , "0 FILE unglued_group.ldr"
+                            , "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat"
+                            , "1 2 40 0 0 1 0 0 0 1 0 0 0 1 3001.dat"
+                            , ""
+                            ]
+
+                    doc =
+                        Document.parse mpd
+
+                    sharedBytes =
+                        Link.freeSharePayload doc
+                in
+                case HashPayload.decodeBytes sharedBytes of
+                    Just payload ->
+                        let
+                            opened =
+                                openBytes sharedBytes
+
+                            green3001 =
+                                { part = "3001.dat", color = 2, count = 2 }
+                        in
+                        Expect.all
+                            -- Kit gets the 2 leaf parts, and submodel is pruned
+                            [ \_ -> Expect.equal (Just [ green3001 ]) payload.kit
+                            , \_ -> Expect.equal False (Document.isMultiFile payload.document)
+                            , \_ -> Expect.equal Nothing (Document.submodelByName "unglued_group.ldr" payload.document)
+                            , \_ -> Expect.equal 1 (List.length (Document.placements payload.document))
+
+                            -- Opened puzzle
+                            , \_ -> Expect.equal False opened.free
+                            , \_ -> Expect.equal 2 (remainingForItem opened green3001)
+                            , \_ -> Expect.equal False (clearable opened)
+                            ]
+                            ()
+
+                    Nothing ->
+                        Expect.fail "Failed to decode sharedBytes"
         , test "a puzzle's glued parts do not count against its kit" <|
             \_ ->
                 let

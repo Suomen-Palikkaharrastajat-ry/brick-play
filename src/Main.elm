@@ -4,6 +4,7 @@ module Main exposing
     , Msg(..)
     , accomplishmentBanner
     , accomplishmentBannerIn
+    , clearable
     , hashFor
     , helpRows
     , init
