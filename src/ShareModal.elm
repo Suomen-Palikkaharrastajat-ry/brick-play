@@ -444,46 +444,46 @@ viewRadioCard lang currentSelected onSelect kind =
 
 viewQrCode : Language -> String -> Html msg
 viewQrCode lang url =
-    div
-        [ Attr.attribute "data-testid" "share-qr-container"
-        , Attr.style "display" "flex"
-        , Attr.style "flex-direction" "column"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "8px"
-        , Attr.style "margin" "8px 0"
-        ]
-        [ div
-            [ Attr.attribute "data-testid" "share-qr-code"
-            , Attr.style "background" "#ffffff"
-            , Attr.style "padding" "16px"
-            , Attr.style "border-radius" "8px"
-            , Attr.style "display" "flex"
-            , Attr.style "align-items" "center"
-            , Attr.style "justify-content" "center"
-            , Attr.style "box-shadow" "0 2px 6px rgba(0, 0, 0, 0.15)"
-            , Attr.style "width" "180px"
-            , Attr.style "height" "180px"
-            , Attr.style "box-sizing" "border-box"
-            ]
-            [ case QRCode.fromString url of
-                Ok qrCode ->
-                    QRCode.toSvg
+    case QRCode.fromString url of
+        Ok qrCode ->
+            div
+                [ Attr.attribute "data-testid" "share-qr-container"
+                , Attr.style "display" "flex"
+                , Attr.style "flex-direction" "column"
+                , Attr.style "align-items" "center"
+                , Attr.style "gap" "8px"
+                , Attr.style "margin" "8px 0"
+                ]
+                [ div
+                    [ Attr.attribute "data-testid" "share-qr-code"
+                    , Attr.style "background" "#ffffff"
+                    , Attr.style "padding" "16px"
+                    , Attr.style "border-radius" "8px"
+                    , Attr.style "display" "flex"
+                    , Attr.style "align-items" "center"
+                    , Attr.style "justify-content" "center"
+                    , Attr.style "box-shadow" "0 2px 6px rgba(0, 0, 0, 0.15)"
+                    , Attr.style "width" "180px"
+                    , Attr.style "height" "180px"
+                    , Attr.style "box-sizing" "border-box"
+                    ]
+                    [ QRCode.toSvg
                         [ Svg.Attributes.width "100%"
                         , Svg.Attributes.height "100%"
                         ]
                         qrCode
+                    ]
+                , div
+                    [ Attr.attribute "data-testid" "share-qr-hint"
+                    , Attr.style "font-size" "11px"
+                    , Attr.style "color" Theme.textMuted
+                    , Attr.style "text-align" "center"
+                    ]
+                    [ text (I18n.shareScanQrHint lang) ]
+                ]
 
-                Err _ ->
-                    text "QR Code Error"
-            ]
-        , div
-            [ Attr.attribute "data-testid" "share-qr-hint"
-            , Attr.style "font-size" "11px"
-            , Attr.style "color" Theme.textMuted
-            , Attr.style "text-align" "center"
-            ]
-            [ text (I18n.shareScanQrHint lang) ]
-        ]
+        Err _ ->
+            text ""
 
 
 viewCopyButton : Language -> Bool -> msg -> Html msg

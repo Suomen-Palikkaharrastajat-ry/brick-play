@@ -37,6 +37,7 @@ import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector
+import UI.CameraGlobe as CameraGlobe
 import UI.SnapshotModal as SnapshotModal
 import Url
 import Viewport
@@ -1052,6 +1053,26 @@ shareModalTests =
                             |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-qr-hint") ]
                     ]
                     ()
+        , test "QR code is hidden when the shareable link is too big for a QRCode" <|
+            \_ ->
+                let
+                    hugeFlags =
+                        { testFlags | baseUrl = Just ("https://palikkaharrastajat.fi/play/" ++ String.repeat 3000 "x") }
+
+                    ( model0, _ ) =
+                        init hugeFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+                in
+                Query.fromHtml (view modalOpen)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-code") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-hint") ]
+                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                        ]
         , test "Copy button dispatches CopyShareUrl, displays feedback, and dismisses" <|
             \_ ->
                 let
@@ -1222,7 +1243,11 @@ touchTests =
                     pressedState model =
                         Query.fromHtml (view model)
                             |> Query.find [ Selector.attribute (Attr.attribute "aria-label" "Camera controls") ]
-                            |> Query.has [ Selector.attribute (Attr.attribute "aria-pressed" "true") ]
+                            |> Query.has
+                                [ Selector.attribute (Attr.attribute "aria-pressed" "true")
+                                , Selector.style "background" "rgba(5, 19, 29, 0.9)"
+                                , Selector.style "color" "var(--color-text-on-dark)"
+                                ]
                 in
                 Expect.all
                     [ \_ ->
@@ -1242,6 +1267,48 @@ touchTests =
                         update (GlobeMoved ( 22, 0 )) pressed |> Tuple.first
                 in
                 Expect.greaterThan 1.0e-6 (abs (azimuth moved - azimuth start))
+        , test "realistic mode shows the sun marker on the globe and dragging it orbits the light without moving the camera" <|
+            \_ ->
+                let
+                    wideDraft =
+                        at 964 start
+
+                    wideRealistic =
+                        update ToggleRealistic wideDraft |> Tuple.first
+
+                    initialLight =
+                        Core.lightDirection wideRealistic.studio
+                            |> Maybe.withDefault (vec3 0 1 0)
+
+                    sunAngles =
+                        CameraGlobe.lightAngles initialLight
+
+                    sunPos =
+                        CameraGlobe.markerPosition sunAngles.azimuth sunAngles.elevation
+
+                    afterSunDrag =
+                        wideRealistic
+                            |> (\m -> update (GlobePressed ( sunPos.x, sunPos.y )) m |> Tuple.first)
+                            |> (\m -> update (GlobeMoved ( sunPos.x + 18, sunPos.y - 10 )) m |> Tuple.first)
+                            |> (\m -> update GlobeReleased m |> Tuple.first)
+
+                    nextLight =
+                        Core.lightDirection afterSunDrag.studio
+                            |> Maybe.withDefault initialLight
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view wideDraft)
+                            |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "globe-light-marker") ]
+                    , \_ ->
+                        Query.fromHtml (view wideRealistic)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "globe-light-marker") ]
+                    , \_ ->
+                        Expect.within (Expect.Absolute 1.0e-6) (azimuth wideRealistic) (azimuth afterSunDrag)
+                    , \_ ->
+                        Expect.greaterThan 0.1 (Vec3.distance initialLight nextLight)
+                    ]
+                    ()
         , test "a kit card tap records the card's name for touch screens" <|
             \_ ->
                 let

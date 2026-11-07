@@ -899,6 +899,9 @@ passesWhileTidying msg =
                 Viewport.SetRenderQuality _ ->
                     True
 
+                Viewport.OrbitLightBy _ _ ->
+                    True
+
                 Viewport.KeyReleased _ ->
                     True
 
@@ -1778,7 +1781,17 @@ step msg model =
                 ( model, Cmd.none )
 
         GlobePressed point ->
-            ( { model | globeDrag = Just (CameraGlobe.startDrag model.studio.viewport.camera point) }, Cmd.none )
+            ( { model
+                | globeDrag =
+                    Just
+                        (CameraGlobe.startDragWithLight
+                            model.studio.viewport.camera
+                            (Core.lightDirection model.studio)
+                            point
+                        )
+              }
+            , Cmd.none
+            )
 
         GlobeMoved point ->
             case model.globeDrag of
@@ -1786,8 +1799,16 @@ step msg model =
                     let
                         ( ( azimuthDelta, elevationDelta ), nextDrag ) =
                             CameraGlobe.moveDrag drag point
+
+                        moveMsg =
+                            case CameraGlobe.dragTarget drag of
+                                CameraGlobe.LightTarget ->
+                                    Viewport.OrbitLightBy azimuthDelta elevationDelta
+
+                                CameraGlobe.CameraTarget ->
+                                    Viewport.RotateCameraBy azimuthDelta elevationDelta
                     in
-                    update (viewportMsg (Viewport.RotateCameraBy azimuthDelta elevationDelta))
+                    update (viewportMsg moveMsg)
                         { model | globeDrag = Just nextDrag }
 
                 Nothing ->
@@ -1798,9 +1819,27 @@ step msg model =
                 released =
                     { model | globeDrag = Nothing }
             in
-            case model.globeDrag |> Maybe.andThen (CameraGlobe.releaseDrag model.studio.viewport.camera) of
-                Just ( azimuthDelta, elevationDelta ) ->
-                    update (viewportMsg (Viewport.RotateCameraBy azimuthDelta elevationDelta)) released
+            case model.globeDrag of
+                Just drag ->
+                    case CameraGlobe.dragTarget drag of
+                        CameraGlobe.LightTarget ->
+                            case
+                                Core.lightDirection model.studio
+                                    |> Maybe.andThen (\dir -> CameraGlobe.releaseLightDrag dir drag)
+                            of
+                                Just ( azimuthDelta, elevationDelta ) ->
+                                    update (viewportMsg (Viewport.OrbitLightBy azimuthDelta elevationDelta)) released
+
+                                Nothing ->
+                                    ( released, Cmd.none )
+
+                        CameraGlobe.CameraTarget ->
+                            case CameraGlobe.releaseDrag model.studio.viewport.camera drag of
+                                Just ( azimuthDelta, elevationDelta ) ->
+                                    update (viewportMsg (Viewport.RotateCameraBy azimuthDelta elevationDelta)) released
+
+                                Nothing ->
+                                    ( released, Cmd.none )
 
                 Nothing ->
                     ( released, Cmd.none )
@@ -3063,20 +3102,8 @@ cameraToggle model =
         , Attr.style "padding" "0"
         , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
         , Attr.style "border-radius" "0.75rem"
-        , Attr.style "background"
-            (if model.cameraShown then
-                "var(--color-brand-yellow)"
-
-             else
-                "rgba(5, 19, 29, 0.9)"
-            )
-        , Attr.style "color"
-            (if model.cameraShown then
-                "var(--color-brand)"
-
-             else
-                "var(--color-text-on-dark)"
-            )
+        , Attr.style "background" "rgba(5, 19, 29, 0.9)"
+        , Attr.style "color" "var(--color-text-on-dark)"
         , Attr.style "cursor" "pointer"
         , Attr.style "pointer-events" "auto"
         , keepFocusOnCanvas
@@ -3092,7 +3119,7 @@ realistic-rendering and snapshot buttons.
 -}
 globeControl : Model -> Html Msg
 globeControl model =
-    CameraGlobe.view
+    CameraGlobe.viewWithLight (Core.lightDirection model.studio)
         { camera = model.studio.viewport.camera
         , onPress = GlobePressed
         , onMove = GlobeMoved
