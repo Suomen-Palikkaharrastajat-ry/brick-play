@@ -230,12 +230,15 @@ export class Broadcaster {
     this.onStatus = opts.onStatus || (() => {})
     this.onError = opts.onError || (() => {})
     this.onWarning = opts.onWarning || opts.onError || (() => {})
+    this.onParticipantMessage = opts.onParticipantMessage || (() => {})
+    this.onParticipantLeave = opts.onParticipantLeave || (() => {})
     this.WebSocketClass = opts.WebSocket || (typeof globalThis !== 'undefined' ? globalThis.WebSocket : undefined)
     this.RTCPeerConnectionClass = opts.RTCPeerConnection || (typeof globalThis !== 'undefined' ? globalThis.RTCPeerConnection : undefined)
 
     this.ws = undefined
     this.pcs = new Map()
     this.dcs = new Map()
+    this.reassemblers = new Map()
     this.pendingCandidates = new Map()
     this.optsIceServers = !!opts.iceServers
     this.iceConfig = { iceServers: opts.iceServers || DEFAULT_ICE, bundlePolicy: 'max-bundle' }
@@ -445,11 +448,22 @@ export class Broadcaster {
         }
         break
       case 'viewer_leave':
-        if (msg.viewerId) this.dropViewer(msg.viewerId)
+        if (msg.viewerId) this.handleViewerLeave(msg.viewerId)
         break
       case 'viewers':
         if (typeof msg.count === 'number') this.onViewers(msg.count)
         break
+    }
+  }
+
+  handleViewerLeave(viewerId) {
+    if (this.stopped) return
+    if (!this.pcs.has(viewerId) && !this.dcs.has(viewerId)) return
+    this.dropViewer(viewerId)
+    try {
+      this.onParticipantLeave(viewerId)
+    } catch {
+      // ignore callback error
     }
   }
 
@@ -465,6 +479,38 @@ export class Broadcaster {
 
     const dc = pc.createDataChannel(DATA_CHANNEL, { ordered: true })
     this.dcs.set(viewerId, dc)
+
+    const reassembler = new ChunkReassembler()
+    this.reassemblers.set(viewerId, reassembler)
+
+    dc.addEventListener('message', (e) => {
+      try {
+        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+        if (!msg || typeof msg !== 'object') return
+        if (msg.type === 'chunk') {
+          const parsed = reassembler.addChunkAndParse(msg)
+          if (parsed !== null) {
+            try {
+              this.onParticipantMessage(viewerId, parsed)
+            } catch {
+              // ignore callback error
+            }
+          }
+        } else {
+          try {
+            this.onParticipantMessage(viewerId, msg)
+          } catch {
+            // ignore callback error
+          }
+        }
+      } catch {
+        // ignore malformed message
+      }
+    })
+
+    dc.addEventListener('close', () => {
+      this.handleViewerLeave(viewerId)
+    })
 
     dc.addEventListener('open', () => {
       if (this.latestBytes !== undefined && this.latestBytes !== null) {
@@ -494,11 +540,12 @@ export class Broadcaster {
       if (failed) return
       failed = true
       this.onWarning('WebRTC connection to viewer failed (ICE failed).')
-      this.dropViewer(viewerId)
+      this.handleViewerLeave(viewerId)
     }
 
     pc.addEventListener('connectionstatechange', () => {
       if (pc.connectionState === 'failed') handleFailure()
+      else if (pc.connectionState === 'closed') this.handleViewerLeave(viewerId)
     })
     pc.addEventListener('iceconnectionstatechange', () => {
       if (pc.iceConnectionState === 'failed') handleFailure()
@@ -520,15 +567,20 @@ export class Broadcaster {
 
   dropViewer(viewerId) {
     this.pendingCandidates.delete(viewerId)
+    const reassembler = this.reassemblers.get(viewerId)
+    if (reassembler) {
+      reassembler.clear()
+      this.reassemblers.delete(viewerId)
+    }
     const dc = this.dcs.get(viewerId)
+    const pc = this.pcs.get(viewerId)
+    this.dcs.delete(viewerId)
+    this.pcs.delete(viewerId)
     if (dc) {
       try { dc.close() } catch {}
-      this.dcs.delete(viewerId)
     }
-    const pc = this.pcs.get(viewerId)
     if (pc) {
       try { pc.close() } catch {}
-      this.pcs.delete(viewerId)
     }
   }
 
@@ -559,6 +611,7 @@ export class Broadcaster {
       this.dropViewer(id)
     }
     this.pendingCandidates.clear()
+    this.reassemblers.clear()
     if (this.ws) {
       try { this.ws.close() } catch {}
       this.ws = undefined
@@ -581,6 +634,9 @@ export class Viewer {
 
     this.ws = undefined
     this.pc = undefined
+    this.dc = undefined
+    this.pendingParticipantSnapshot = null
+    this.nextChunkId = 1
     this.optsIceServers = !!opts.iceServers
     this.iceConfig = { iceServers: opts.iceServers || DEFAULT_ICE, bundlePolicy: 'max-bundle' }
     this.pendingCandidates = []
@@ -655,6 +711,10 @@ export class Viewer {
     if (this.pc) {
       try { this.pc.close() } catch {}
     }
+    if (this.dc) {
+      try { this.dc.close() } catch {}
+      this.dc = undefined
+    }
     this.reassembler.clear()
     const PeerConn = this.RTCPeerConnectionClass || globalThis.RTCPeerConnection
     if (!PeerConn) {
@@ -666,6 +726,17 @@ export class Viewer {
 
     pc.addEventListener('datachannel', (e) => {
       const dc = e.channel
+      this.dc = dc
+
+      const flush = () => {
+        this.flushPendingParticipantSnapshot()
+      }
+      if (dc.readyState === 'open') {
+        flush()
+      } else {
+        dc.addEventListener('open', flush)
+      }
+
       dc.addEventListener('message', (ev) => {
         try {
           const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data
@@ -709,6 +780,7 @@ export class Viewer {
       })
 
       dc.addEventListener('close', () => {
+        if (this.dc === dc) this.dc = undefined
         if (!this.stopped) this.onStatus('reconnecting')
       })
     })
@@ -778,6 +850,70 @@ export class Viewer {
     }
   }
 
+  flushPendingParticipantSnapshot() {
+    if (this.pendingParticipantSnapshot && this.dc && this.dc.readyState === 'open') {
+      const snapshot = this.pendingParticipantSnapshot
+      this.pendingParticipantSnapshot = null
+      this.sendParticipantSnapshot(snapshot)
+    }
+  }
+
+  sendParticipantSnapshot(snapshot) {
+    if (!snapshot) return
+    let payload
+    if (Array.isArray(snapshot) || snapshot instanceof Uint8Array) {
+      payload = {
+        type: 'participant_snapshot',
+        name: '',
+        bytes: normalizeBytes(snapshot),
+        thumbnail: null,
+        brickCount: 0,
+      }
+    } else if (typeof snapshot === 'object') {
+      payload = {
+        name: '',
+        thumbnail: null,
+        brickCount: 0,
+        ...snapshot,
+        type: 'participant_snapshot',
+        bytes: snapshot.bytes !== undefined ? normalizeBytes(snapshot.bytes) : [],
+      }
+    } else {
+      return
+    }
+
+    if (!this.dc || this.dc.readyState !== 'open') {
+      this.pendingParticipantSnapshot = payload
+      return
+    }
+
+    const raw = JSON.stringify(payload)
+    if (raw.length <= CHUNK_SIZE) {
+      try {
+        this.dc.send(raw)
+      } catch {
+        // ignore send error
+      }
+      return
+    }
+
+    const id = this.nextChunkId++
+    if (this.nextChunkId > 0x7fffffff) this.nextChunkId = 1
+    const chunks = splitChunks(raw, id, CHUNK_SIZE)
+    for (const chunk of chunks) {
+      if (this.dc.readyState !== 'open') break
+      try {
+        this.dc.send(JSON.stringify(chunk))
+      } catch {
+        break
+      }
+    }
+  }
+
+  push(snapshot) {
+    return this.sendParticipantSnapshot(snapshot)
+  }
+
   send(msg) {
     if (this.ws?.readyState === 1) {
       try {
@@ -796,6 +932,11 @@ export class Viewer {
     }
     this.pendingCandidates = []
     this.reassembler.clear()
+    this.pendingParticipantSnapshot = null
+    if (this.dc) {
+      try { this.dc.close() } catch {}
+      this.dc = undefined
+    }
     if (this.pc) {
       try { this.pc.close() } catch {}
       this.pc = undefined

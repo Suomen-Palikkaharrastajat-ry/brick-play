@@ -31,7 +31,7 @@ class MockDataChannel {
   constructor(label, options = {}) {
     this.label = label
     this.ordered = options.ordered ?? true
-    this.readyState = 'open'
+    this.readyState = options.readyState ?? 'open'
     this.listeners = new Map()
     this.sent = []
   }
@@ -50,6 +50,8 @@ class MockDataChannel {
   }
 
   dispatchEvent(type, event = {}) {
+    if (type === 'open') this.readyState = 'open'
+    if (type === 'close') this.readyState = 'closed'
     const list = this.listeners.get(type) || []
     for (const cb of list) cb(event)
   }
@@ -60,6 +62,7 @@ class MockDataChannel {
   }
 
   close() {
+    if (this.readyState === 'closed') return
     this.readyState = 'closed'
     this.dispatchEvent('close', {})
   }
@@ -910,5 +913,319 @@ test('Viewer lifecycle, chunk handling and error reporting', async (t) => {
     assert.ok(errors.length > 0)
     assert.match(errors[0], /ICE failed/)
     v.stop()
+  })
+})
+
+test('Reverse sharing participant messages and lifecycle', async (t) => {
+  await t.test('viewer sends participant snapshot (< 48 KB) to broadcaster via data channel', async () => {
+    const receivedMessages = []
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onParticipantMessage: (viewerId, msg) => {
+        receivedMessages.push({ viewerId, msg })
+      },
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    // Viewer joins host
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewer1' })
+    const hostDc = b.dcs.get('viewer1')
+    assert.ok(hostDc, 'Host created data channel for viewer1')
+    hostDc.dispatchEvent('open', {})
+
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: b.roomId,
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    await v.start()
+    v.ws.simulateOpen()
+
+    // Host sent offer in viewer_join handling
+    const offerSent = b.ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === 'offer')
+    assert.ok(offerSent)
+    await v.ws.simulateMessage({ type: 'offer', offer: offerSent.offer })
+
+    // Provide viewer with a mock data channel and bridge viewer sends to host data channel
+    const viewerDc = new MockDataChannel(DATA_CHANNEL)
+    v.pc.dispatchEvent('datachannel', { channel: viewerDc })
+    viewerDc.dispatchEvent('open', {})
+
+    viewerDc.send = (data) => {
+      MockDataChannel.prototype.send.call(viewerDc, data)
+      hostDc.dispatchEvent('message', { data })
+    }
+
+    const snapshot = {
+      name: 'Alice',
+      bytes: [1, 2, 3, 4, 5],
+      thumbnail: 'data:image/png;base64,mockthumb',
+      brickCount: 5,
+    }
+
+    v.sendParticipantSnapshot(snapshot)
+
+    assert.equal(viewerDc.sent.length, 1, 'Small payload should be sent as a single message')
+    assert.equal(receivedMessages.length, 1, 'Broadcaster should receive the snapshot')
+    assert.equal(receivedMessages[0].viewerId, 'viewer1')
+    assert.deepEqual(receivedMessages[0].msg, {
+      type: 'participant_snapshot',
+      name: 'Alice',
+      bytes: [1, 2, 3, 4, 5],
+      thumbnail: 'data:image/png;base64,mockthumb',
+      brickCount: 5,
+    })
+
+    v.stop()
+    b.stop()
+  })
+
+  await t.test('viewer sends large participant snapshot (> 48 KB) that gets split into chunks and reassembled by broadcaster', async () => {
+    const receivedMessages = []
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onParticipantMessage: (viewerId, msg) => {
+        receivedMessages.push({ viewerId, msg })
+      },
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerLarge' })
+    const hostDc = b.dcs.get('viewerLarge')
+    hostDc.dispatchEvent('open', {})
+
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: b.roomId,
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    await v.start()
+    v.ws.simulateOpen()
+    const offerSent = b.ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === 'offer')
+    await v.ws.simulateMessage({ type: 'offer', offer: offerSent.offer })
+
+    const viewerDc = new MockDataChannel(DATA_CHANNEL)
+    v.pc.dispatchEvent('datachannel', { channel: viewerDc })
+    viewerDc.dispatchEvent('open', {})
+
+    viewerDc.send = (data) => {
+      MockDataChannel.prototype.send.call(viewerDc, data)
+      hostDc.dispatchEvent('message', { data })
+    }
+
+    // Large payload (> 48 KB)
+    const largeBytes = new Array(15000).fill(255)
+    const snapshot = {
+      name: 'Bob',
+      bytes: largeBytes,
+      thumbnail: 'large_thumb',
+      brickCount: 420,
+    }
+
+    v.sendParticipantSnapshot(snapshot)
+
+    assert.ok(viewerDc.sent.length > 1, `Payload should be split into multiple chunks, was ${viewerDc.sent.length}`)
+    const firstChunk = JSON.parse(viewerDc.sent[0])
+    assert.equal(firstChunk.type, 'chunk')
+    assert.equal(firstChunk.index, 0)
+
+    assert.equal(receivedMessages.length, 1, 'Broadcaster should reassemble chunks and fire onParticipantMessage once')
+    assert.equal(receivedMessages[0].viewerId, 'viewerLarge')
+    assert.equal(receivedMessages[0].msg.type, 'participant_snapshot')
+    assert.equal(receivedMessages[0].msg.name, 'Bob')
+    assert.equal(receivedMessages[0].msg.brickCount, 420)
+    assert.equal(receivedMessages[0].msg.thumbnail, 'large_thumb')
+    assert.deepEqual(receivedMessages[0].msg.bytes, largeBytes)
+
+    v.stop()
+    b.stop()
+  })
+
+  await t.test('viewer queues participant snapshot if data channel is not yet open and flushes on open', async () => {
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: 'TEST1234',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    // Send snapshot before connecting/datachannel is established
+    v.sendParticipantSnapshot({
+      name: 'EarlyBird',
+      bytes: [100, 200],
+      brickCount: 2,
+    })
+
+    assert.ok(v.pendingParticipantSnapshot, 'Snapshot should be queued')
+    assert.equal(v.pendingParticipantSnapshot.name, 'EarlyBird')
+
+    await v.start()
+    v.ws.simulateOpen()
+    await v.ws.simulateMessage({
+      type: 'offer',
+      offer: { type: 'offer', sdp: 'mock-offer-sdp' },
+    })
+
+    const dc = new MockDataChannel(DATA_CHANNEL, { readyState: 'connecting' })
+    v.pc.dispatchEvent('datachannel', { channel: dc })
+    assert.equal(dc.sent.length, 0, 'No message should be sent while channel is connecting')
+
+    // Dispatch open event on data channel
+    dc.dispatchEvent('open', {})
+
+    assert.equal(dc.sent.length, 1, 'Queued snapshot should be flushed on open')
+    assert.equal(v.pendingParticipantSnapshot, null, 'Pending snapshot should be cleared after flush')
+    const sent = JSON.parse(dc.sent[0])
+    assert.equal(sent.type, 'participant_snapshot')
+    assert.equal(sent.name, 'EarlyBird')
+    assert.deepEqual(sent.bytes, [100, 200])
+    assert.equal(sent.brickCount, 2)
+
+    v.stop()
+  })
+
+  await t.test('viewer normalizes Uint8Array bytes and supports push alias', async () => {
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: 'TEST1234',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    await v.start()
+    v.ws.simulateOpen()
+    await v.ws.simulateMessage({
+      type: 'offer',
+      offer: { type: 'offer', sdp: 'mock-offer-sdp' },
+    })
+
+    const dc = new MockDataChannel(DATA_CHANNEL)
+    v.pc.dispatchEvent('datachannel', { channel: dc })
+    dc.dispatchEvent('open', {})
+
+    // Test push with Uint8Array
+    v.push({
+      name: 'TypedArrayUser',
+      bytes: new Uint8Array([1, 2, 3]),
+      brickCount: 1,
+    })
+
+    assert.equal(dc.sent.length, 1)
+    const sent = JSON.parse(dc.sent[0])
+    assert.deepEqual(sent.bytes, [1, 2, 3], 'Uint8Array should be normalized to standard Array')
+
+    v.stop()
+  })
+
+  await t.test('broadcaster fires onParticipantLeave when viewer leaves via viewer_leave WebSocket signal', async () => {
+    const leftViewers = []
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onParticipantLeave: (viewerId) => leftViewers.push(viewerId),
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerA' })
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerB' })
+
+    assert.ok(b.pcs.has('viewerA'))
+    assert.ok(b.pcs.has('viewerB'))
+
+    await b.ws.simulateMessage({ type: 'viewer_leave', viewerId: 'viewerA' })
+
+    assert.deepEqual(leftViewers, ['viewerA'])
+    assert.equal(b.pcs.has('viewerA'), false, 'PeerConnection for viewerA should be dropped')
+    assert.equal(b.dcs.has('viewerA'), false, 'DataChannel for viewerA should be dropped')
+    assert.equal(b.reassemblers.has('viewerA'), false, 'Reassembler for viewerA should be cleared')
+    assert.equal(b.pcs.has('viewerB'), true, 'viewerB should remain active')
+
+    b.stop()
+  })
+
+  await t.test('broadcaster fires onParticipantLeave when viewer data channel closes', async () => {
+    const leftViewers = []
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onParticipantLeave: (viewerId) => leftViewers.push(viewerId),
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerDisconnect' })
+    const dc = b.dcs.get('viewerDisconnect')
+    assert.ok(dc)
+
+    // Data channel closes unexpectedly (e.g. viewer closed browser tab)
+    dc.close()
+
+    assert.deepEqual(leftViewers, ['viewerDisconnect'])
+    assert.equal(b.dcs.has('viewerDisconnect'), false)
+    assert.equal(b.pcs.has('viewerDisconnect'), false)
+    assert.equal(b.reassemblers.has('viewerDisconnect'), false)
+
+    // Ensure subsequent viewer_leave signal does not duplicate callback
+    await b.ws.simulateMessage({ type: 'viewer_leave', viewerId: 'viewerDisconnect' })
+    assert.deepEqual(leftViewers, ['viewerDisconnect'], 'onParticipantLeave should not fire twice')
+
+    b.stop()
+  })
+
+  await t.test('broadcaster cleans up reassembler state / buffers on viewer leave', async () => {
+    const b = new Broadcaster({
+      signalingUrl: 'https://sig.example.com',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+    })
+
+    const startPromise = b.start()
+    b.ws.simulateOpen()
+    await startPromise
+
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerIncomplete' })
+    const dc = b.dcs.get('viewerIncomplete')
+    dc.dispatchEvent('open', {})
+
+    // Send incomplete chunk (1 of 3)
+    const chunk1 = { type: 'chunk', id: 99, index: 0, total: 3, data: 'part1' }
+    dc.dispatchEvent('message', { data: JSON.stringify(chunk1) })
+
+    const reassembler = b.reassemblers.get('viewerIncomplete')
+    assert.ok(reassembler)
+    assert.equal(reassembler.sessions.size, 1, 'Reassembler should hold partial chunk session')
+
+    // Viewer leaves
+    await b.ws.simulateMessage({ type: 'viewer_leave', viewerId: 'viewerIncomplete' })
+    assert.equal(b.reassemblers.has('viewerIncomplete'), false, 'Reassembler map entry should be deleted')
+    assert.equal(reassembler.sessions.size, 0, 'Reassembler sessions should be cleared')
+
+    // Viewer rejoins - fresh session
+    await b.ws.simulateMessage({ type: 'viewer_join', viewerId: 'viewerIncomplete' })
+    assert.ok(b.reassemblers.has('viewerIncomplete'))
+    assert.equal(b.reassemblers.get('viewerIncomplete').sessions.size, 0)
+
+    b.stop()
   })
 })
