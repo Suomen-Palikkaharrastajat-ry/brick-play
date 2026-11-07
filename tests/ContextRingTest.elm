@@ -1067,6 +1067,7 @@ flagsFor hash hintSeen coarse =
     , coarsePointer = coarse
     , language = Just "en"
     , testApiEnabled = False
+    , baseUrl = Nothing
     }
 
 

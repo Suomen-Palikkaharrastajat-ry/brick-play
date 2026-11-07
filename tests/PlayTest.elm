@@ -12,6 +12,7 @@ import Main exposing (Flags, Model, Msg(..), helpRows, init, kitItemName, remain
 import Math.Matrix4 as Mat4
 import Math.Vector3 as Vec3 exposing (vec3)
 import Set
+import ShareModal exposing (ShareKind(..))
 import Studio.Core as Core
 import Studio.HashPayload as HashPayload
 import Studio.Shortcuts exposing (TurnDirection(..))
@@ -29,6 +30,7 @@ suite =
     describe "Brick Play"
         [ menuTests
         , snapshotTests
+        , shareModalTests
         , sharingAndToastTests
         , touchTests
         , test "initial inventory has 10 bricks available" <|
@@ -521,6 +523,7 @@ testFlags =
     , coarsePointer = False
     , language = Just "en"
     , testApiEnabled = False
+    , baseUrl = Nothing
     }
 
 
@@ -631,8 +634,9 @@ menuTests =
                 Query.fromHtml (view opened)
                     |> Expect.all
                         [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 7)
+                        , Query.has [ Selector.text "Share..." ]
                         , Query.hasNot [ Selector.text "Share editable model" ]
-                        , Query.has [ Selector.text "Share parts set" ]
+                        , Query.hasNot [ Selector.text "Share parts set" ]
                         , Query.hasNot [ Selector.text "Share fixed model" ]
                         , Query.has [ Selector.text "Language: English (Suomeksi)" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
@@ -868,6 +872,244 @@ snapshotTests =
                     [ Maybe.map .progress progressed.snapshotModal == Just { fraction = 0.25, samples = 4 }
                     , Maybe.map .phase failed.snapshotModal == Just (SnapshotModal.Failed "Tracer ran out of memory")
                     ]
+        ]
+
+
+shareModalTests : Test
+shareModalTests =
+    describe "Share Modal"
+        [ test "Share... menu item opens modal and pauses keyboard shortcuts" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( menuOpen, _ ) =
+                        update ToggleMenu model0
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal menuOpen
+                in
+                Expect.all
+                    [ \_ -> Expect.equal False modalOpen.menuOpen
+                    , \_ -> Expect.notEqual Nothing modalOpen.shareModal
+                    , \_ -> Expect.equal (Just (ShareModal.init ShareModal.PartsSet)) modalOpen.shareModal
+                    , \_ -> Expect.equal True modalOpen.studio.helpVisible
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                    ]
+                    ()
+        , test "Escape key closes the open share modal" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+
+                    ( afterEscape, _ ) =
+                        update (pressKey "Escape") modalOpen
+                in
+                Expect.all
+                    [ \_ -> Expect.notEqual Nothing modalOpen.shareModal
+                    , \_ -> Expect.equal Nothing afterEscape.shareModal
+                    ]
+                    ()
+        , test "Close button and backdrop dismiss the share modal" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal-close") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect CloseShareModal
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal-backdrop") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect CloseShareModal
+                    , \_ ->
+                        let
+                            ( closed, _ ) =
+                                update CloseShareModal modalOpen
+                        in
+                        Expect.equal Nothing closed.shareModal
+                    ]
+                    ()
+        , test "Feature selector offers applicable options and switches selection" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( placedModel, _ ) =
+                        addFirst model0
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal placedModel
+
+                    ( selectedFixed, _ ) =
+                        update (SelectShareKind ShareModal.FixedModel) modalOpen
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal [ ShareModal.PartsSet, ShareModal.FixedModel ]
+                            (ShareModal.availableKinds { free = False, hasInventory = True, hasPlacedUnglued = False })
+                    , \_ ->
+                        Expect.equal [ ShareModal.PartsSet, ShareModal.PartialSet, ShareModal.FixedModel ]
+                            (ShareModal.availableKinds { free = False, hasInventory = True, hasPlacedUnglued = True })
+                    , \_ ->
+                        Expect.equal [ ShareModal.FreeBuilding, ShareModal.PartsSet, ShareModal.FixedModel ]
+                            (ShareModal.availableKinds { free = True, hasInventory = False, hasPlacedUnglued = False })
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-partial") ]
+                    , \_ ->
+                        case selectedFixed.shareModal of
+                            Just sm ->
+                                Expect.equal ShareModal.FixedModel sm.selected
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    ]
+                    ()
+        , test "Radio cards provide accessibility attributes" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+                in
+                Query.fromHtml (view modalOpen)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "role" "radiogroup") ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
+                            >> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "role" "radio") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-checked" "true") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "tabindex" "0") ]
+                                ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
+                            >> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "role" "radio") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-checked" "false") ]
+                                ]
+                        ]
+        , test "QR code SVG generation with quiet zone padding" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+
+                    hash =
+                        ShareModal.computeHash ShareModal.PartsSet model0.free model0.studio.document model0.inventory
+
+                    url =
+                        ShareModal.computeUrl "https://palikkaharrastajat.fi/play/" ShareModal.PartsSet model0.free model0.studio.document model0.inventory
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True (String.startsWith "#b/" hash)
+                    , \_ -> Expect.equal ("https://palikkaharrastajat.fi/play/" ++ hash) url
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-code") ]
+                            |> Query.has [ Selector.tag "svg" ]
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-qr-hint") ]
+                    ]
+                    ()
+        , test "Copy button dispatches CopyShareUrl, displays feedback, and dismisses" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+
+                    ( copiedModel, _ ) =
+                        update CopyShareUrl modalOpen
+
+                    ( dismissedModel, _ ) =
+                        update DismissShareCopied copiedModel
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect CopyShareUrl
+                    , \_ ->
+                        case copiedModel.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.copied
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view copiedModel)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                            |> Query.has [ Selector.text "Copied!" ]
+                    , \_ ->
+                        case dismissedModel.shareModal of
+                            Just sm ->
+                                Expect.equal False sm.copied
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view dismissedModel)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                            |> Query.has [ Selector.text "Copy link" ]
+                    ]
+                    ()
+        , test "Mobile layout and accessibility attributes in Finnish and English" <|
+            \_ ->
+                let
+                    ( modelEn, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( modelFi, _ ) =
+                        init { testFlags | language = Just "fi" } |> Tuple.first |> update OpenShareModal
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view modelEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Share build" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal-close") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view modelEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal-close") ]
+                            |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Close") ]
+                    , \_ ->
+                        Query.fromHtml (view modelFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Jaa rakennelma" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-label" "Sulje") ]
+                                , Query.has [ Selector.text "Kopioi linkki" ]
+                                , Query.has [ Selector.text "Lue puhelimen kameralla avataksesi suoraan" ]
+                                ]
+                    ]
+                    ()
         ]
 
 

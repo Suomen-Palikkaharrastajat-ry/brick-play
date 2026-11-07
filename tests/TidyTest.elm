@@ -273,6 +273,7 @@ flagsFor hash =
     , coarsePointer = False
     , language = Just "en"
     , testApiEnabled = False
+    , baseUrl = Nothing
     }
 
 

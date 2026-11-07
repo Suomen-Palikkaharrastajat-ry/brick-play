@@ -122,6 +122,7 @@ import Render.Camera as Camera
 import Render.Style as Style
 import Ring
 import Set
+import ShareModal
 import Shortcuts as PlayShortcuts
 import Simulation
 import Step
@@ -166,6 +167,7 @@ type alias Flags =
     , coarsePointer : Bool
     , language : Maybe String
     , testApiEnabled : Bool
+    , baseUrl : Maybe String
     }
 
 
@@ -209,6 +211,8 @@ type alias Model =
     , toast : Maybe { message : String, id : Int }
     , toastCounter : Int
     , snapshotModal : Maybe SnapshotModal.Model
+    , shareModal : Maybe ShareModal.Model
+    , baseUrl : String
     , tidy : List Health.Fix
     , tidyOpen : Bool
     , stepSize : Step.StepSize
@@ -325,6 +329,11 @@ type Msg
     | OpenTidy
     | CancelTidy
     | ApplyTidy
+    | OpenShareModal
+    | CloseShareModal
+    | SelectShareKind ShareModal.ShareKind
+    | CopyShareUrl
+    | DismissShareCopied
     | ShareEditableModel
     | SharePartsSet
     | ShareFixedModel
@@ -455,6 +464,8 @@ init flags =
             , toast = Nothing
             , toastCounter = 0
             , snapshotModal = Nothing
+            , shareModal = Nothing
+            , baseUrl = Maybe.withDefault "https://palikkaharrastajat.fi/play/" flags.baseUrl
             , tidy = []
             , tidyOpen = False
             , stepSize = Step.Stud
@@ -727,7 +738,10 @@ update msg model =
             runTestCommand payload model
 
         _ ->
-            if model.tidyOpen then
+            if closesShareModal msg model then
+                ( syncKeyPause { model | shareModal = Nothing }, Cmd.none )
+
+            else if model.tidyOpen then
                 updateTidying msg model
 
             else if closesSnapshot msg model then
@@ -931,6 +945,18 @@ closesSnapshot msg model =
             False
 
 
+{-| Escape closes an open share modal before anything else sees the key.
+-}
+closesShareModal : Msg -> Model -> Bool
+closesShareModal msg model =
+    case ( model.shareModal, msg ) of
+        ( Just _, StudioMsg (Core.ViewportMsg (Viewport.KeyPressed keyEvent)) ) ->
+            ViewportShortcuts.closesDialog keyEvent
+
+        _ ->
+            False
+
+
 {-| Run a message, then bring the derived state up to date (`settle`). The dock
 asks for the pictures of its new parts when the parts it lists change.
 -}
@@ -1012,6 +1038,9 @@ runTestCommand value model =
 
     else if mutatesDocument && model.snapshotModal /= Nothing then
         ( model, reply (failure "Cannot send test input while the snapshot modal is open") )
+
+    else if mutatesDocument && model.shareModal /= Nothing then
+        ( model, reply (failure "Cannot send test input while the share modal is open") )
 
     else
         case commandType of
@@ -1797,6 +1826,50 @@ step msg model =
             , Ports.storeLanguage (I18n.toString lang)
             )
 
+        OpenShareModal ->
+            let
+                initialKind =
+                    ShareModal.defaultKind
+                        { free = model.free
+                        , hasInventory = not (List.isEmpty model.inventory)
+                        }
+            in
+            ( syncKeyPause { model | menuOpen = False, shareModal = Just (ShareModal.init initialKind) }
+            , Cmd.none
+            )
+
+        CloseShareModal ->
+            ( syncKeyPause { model | shareModal = Nothing }
+            , Cmd.none
+            )
+
+        SelectShareKind kind ->
+            ( { model | shareModal = Maybe.map (\sm -> { sm | selected = kind, copied = False }) model.shareModal }
+            , Cmd.none
+            )
+
+        CopyShareUrl ->
+            case model.shareModal of
+                Just sm ->
+                    let
+                        payload =
+                            ShareModal.payloadFor sm.selected model.free model.studio.document model.inventory
+                    in
+                    ( { model | shareModal = Just { sm | copied = True } }
+                    , Cmd.batch
+                        [ Ports.copyToClipboard payload
+                        , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        DismissShareCopied ->
+            ( { model | shareModal = Maybe.map (\sm -> { sm | copied = False }) model.shareModal }
+            , Cmd.none
+            )
+
         ShareEditableModel ->
             if model.free then
                 copyShareHash (Link.editableHash model.studio.document) model
@@ -2115,7 +2188,7 @@ ringAvoid model =
 
 syncKeyPause : Model -> Model
 syncKeyPause model =
-    { model | studio = Core.setHelpVisible (model.helpOpen || model.menuOpen || model.tidyOpen) model.studio }
+    { model | studio = Core.setHelpVisible (model.helpOpen || model.menuOpen || model.tidyOpen || model.shareModal /= Nothing) model.studio }
 
 
 {-| Run a studio edit and forward its effects.
@@ -2441,6 +2514,22 @@ view model =
                     , onClose = SnapshotClose
                     }
                     modal
+
+            Nothing ->
+                text ""
+        , case model.shareModal of
+            Just sm ->
+                ShareModal.viewWithLanguage model.language
+                    { language = model.language
+                    , baseUrl = model.baseUrl
+                    , free = model.free
+                    , document = model.studio.document
+                    , inventory = model.inventory
+                    , onClose = CloseShareModal
+                    , onSelectKind = SelectShareKind
+                    , onCopyUrl = CopyShareUrl
+                    }
+                    sm
 
             Nothing ->
                 text ""
@@ -3107,25 +3196,12 @@ menuConfig model =
     }
 
 
-{-| The share items the top-left menu offers for the current mode: an opened
-link offers only similar or lesser shares (editable offers all three, a parts
-set offers only parts set, and a fixed model offers only fixed model).
+{-| The share item the top-left menu offers.
 -}
 shareMenuItems : Model -> List (HamburgerMenu.Item Msg)
 shareMenuItems model =
-    if model.free then
-        [ { label = I18n.menuShareEditable model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareEditableModel }
-        , { label = I18n.menuSharePartsSet model.language, shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
-        , { label = I18n.menuShareFixed model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
-        ]
-
-    else if List.isEmpty model.inventory then
-        [ { label = I18n.menuShareFixed model.language, shortcut = "", enabled = True, onSelect = MenuPicked ShareFixedModel }
-        ]
-
-    else
-        [ { label = I18n.menuSharePartsSet model.language, shortcut = "", enabled = True, onSelect = MenuPicked SharePartsSet }
-        ]
+    [ { label = I18n.menuShare model.language, shortcut = "", enabled = True, onSelect = MenuPicked OpenShareModal }
+    ]
 
 
 {-| Whether Clear has anything to remove: any part in free building, else any

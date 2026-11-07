@@ -66,6 +66,7 @@ flagsFor hash =
     , coarsePointer = False
     , language = Just "en"
     , testApiEnabled = False
+    , baseUrl = Nothing
     }
 
 
@@ -82,6 +83,7 @@ flagsForBytes bytes =
     , coarsePointer = False
     , language = Just "en"
     , testApiEnabled = False
+    , baseUrl = Nothing
     }
 
 
@@ -685,14 +687,21 @@ shareTests =
 
                     renderedMenu =
                         Query.fromHtml (view (menuOpen reopened))
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal reopened
+
+                    renderedModal =
+                        Query.fromHtml (view modalOpen)
                 in
                 Expect.all
                     [ \m -> Expect.equal True m.free
                     , \m -> Expect.equal 6 (List.length (placementIds m))
                     , \m -> Expect.equal [ 0 ] (gluedIds m)
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share editable model" ]
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share parts set" ]
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share fixed model" ]
+                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
                     ]
                     reopened
         , test "an opened parts set offers only Share parts set" <|
@@ -703,11 +712,18 @@ shareTests =
 
                     renderedMenu =
                         Query.fromHtml (view (menuOpen setModel))
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal setModel
+
+                    renderedModal =
+                        Query.fromHtml (view modalOpen)
                 in
                 Expect.all
-                    [ \_ -> renderedMenu |> Query.hasNot [ Selector.text "Share editable model" ]
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share parts set" ]
-                    , \_ -> renderedMenu |> Query.hasNot [ Selector.text "Share fixed model" ]
+                    [ \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
                     ]
                     ()
         , test "Link.fixedModelHash glues all parts, clears the kit, hides the catalog dock, and offers only Share fixed model" <|
@@ -722,6 +738,12 @@ shareTests =
                     renderedMenu =
                         Query.fromHtml (view (menuOpen fixedModel))
 
+                    ( modalOpen, _ ) =
+                        update OpenShareModal fixedModel
+
+                    renderedModal =
+                        Query.fromHtml (view modalOpen)
+
                     narrowFixed =
                         Tuple.first (update (WindowResized 375 667) fixedModel)
                 in
@@ -733,9 +755,10 @@ shareTests =
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "part-dock") ]
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Kit") ]
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Parts") ]
-                    , \_ -> renderedMenu |> Query.hasNot [ Selector.text "Share editable model" ]
-                    , \_ -> renderedMenu |> Query.hasNot [ Selector.text "Share parts set" ]
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share fixed model" ]
+                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
+                    , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
+                    , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
                     , \_ ->
                         Query.fromHtml (view narrowFixed)
                             |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Camera controls") ]
