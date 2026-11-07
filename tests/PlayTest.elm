@@ -1247,6 +1247,167 @@ shareModalTests =
                                 ]
                     ]
                     ()
+        , test "Toggling reverse sharing on FreeBuilding, PartsSet, and FixedModel" <|
+            \_ ->
+                let
+                    ( modelParts, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( partsToggled, _ ) =
+                        update ToggleReverseSharing modelParts
+
+                    ( partsToggledBack, _ ) =
+                        update ToggleReverseSharing partsToggled
+
+                    ( modelFixed, _ ) =
+                        update (SelectShareKind ShareModal.FixedModel) modelParts
+
+                    ( fixedToggled, _ ) =
+                        update ToggleReverseSharing modelFixed
+
+                    ( modelFree0, _ ) =
+                        init { testFlags | initialHash = "" }
+
+                    ( modelFree, _ ) =
+                        update OpenShareModal modelFree0
+
+                    ( freeToggled, _ ) =
+                        update ToggleReverseSharing modelFree
+                in
+                Expect.all
+                    [ \_ ->
+                        case partsToggled.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.reverseSharing
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        case partsToggledBack.shareModal of
+                            Just sm ->
+                                Expect.equal False sm.reverseSharing
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        case fixedToggled.shareModal of
+                            Just sm ->
+                                Expect.all
+                                    [ \_ -> Expect.equal ShareModal.FixedModel sm.selected
+                                    , \_ -> Expect.equal True sm.reverseSharing
+                                    ]
+                                    ()
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        case freeToggled.shareModal of
+                            Just sm ->
+                                Expect.all
+                                    [ \_ -> Expect.equal ShareModal.FreeBuilding sm.selected
+                                    , \_ -> Expect.equal True sm.reverseSharing
+                                    ]
+                                    ()
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    ]
+                    ()
+        , test "Reverse sharing participant and host grid URLs format" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init testFlags
+
+                    baseUrl =
+                        "https://palikkaharrastajat.fi/play/"
+
+                    roomId =
+                        "7K9P2X4"
+
+                    participantPartsUrl =
+                        ShareModal.computeReverseParticipantUrl baseUrl roomId ShareModal.PartsSet model0.free model0.studio.document model0.inventory
+
+                    participantFixedUrl =
+                        ShareModal.computeReverseParticipantUrl baseUrl roomId ShareModal.FixedModel model0.free model0.studio.document model0.inventory
+
+                    participantFreeUrl =
+                        ShareModal.computeReverseParticipantUrl baseUrl roomId ShareModal.FreeBuilding True model0.studio.document model0.inventory
+
+                    hostUrl =
+                        ShareModal.computeReverseHostUrl baseUrl roomId
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal True
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantPartsUrl)
+                    , \_ ->
+                        Expect.equal True
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantFixedUrl)
+                    , \_ ->
+                        Expect.equal True
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantFreeUrl)
+                    , \_ ->
+                        Expect.equal "https://palikkaharrastajat.fi/play/#/grid/7K9P2X4" hostUrl
+                    ]
+                    ()
+        , test "Reverse sharing UI presence of copy-participant-url, copy-host-url, and participant QR code" <|
+            \_ ->
+                let
+                    ( modelOpen, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( reverseActive, _ ) =
+                        update ToggleReverseSharing modelOpen
+
+                    ( copiedParticipant, _ ) =
+                        update CopyParticipantUrl reverseActive
+
+                    ( copiedHost, _ ) =
+                        update CopyHostUrl reverseActive
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view modelOpen)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "copy-participant-url") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "copy-host-url") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-code") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view reverseActive)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
+                                    >> Query.has [ Selector.attribute (Attr.attribute "aria-checked" "true") ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-participant-url") ]
+                                    >> Event.simulate Event.click
+                                    >> Event.expect CopyParticipantUrl
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-host-url") ]
+                                    >> Event.simulate Event.click
+                                    >> Event.expect CopyHostUrl
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "open-host-grid") ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-code") ]
+                                    >> Query.has [ Selector.tag "svg" ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                                ]
+                    , \_ ->
+                        case copiedParticipant.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.copiedParticipant
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        case copiedHost.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.copiedHost
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    ]
+                    ()
         ]
 
 

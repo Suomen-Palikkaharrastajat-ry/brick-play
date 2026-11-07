@@ -381,6 +381,10 @@ type Msg
     | SelectShareKind ShareModal.ShareKind
     | CopyShareUrl
     | DismissShareCopied
+    | ToggleReverseSharing
+    | CopyParticipantUrl
+    | CopyHostUrl
+    | ShareModalMsg ShareModal.Msg
     | ShareEditableModel
     | SharePartsSet
     | ShareFixedModel
@@ -2038,7 +2042,25 @@ step msg model =
             )
 
         SelectShareKind kind ->
-            ( { model | shareModal = Maybe.map (\sm -> { sm | selected = kind, copied = False }) model.shareModal }
+            ( { model
+                | shareModal =
+                    Maybe.map
+                        (\sm ->
+                            { sm
+                                | selected = kind
+                                , copied = False
+                                , copiedParticipant = False
+                                , copiedHost = False
+                                , reverseSharing =
+                                    if kind == ShareModal.LivePreview then
+                                        False
+
+                                    else
+                                        sm.reverseSharing
+                            }
+                        )
+                        model.shareModal
+              }
             , Cmd.none
             )
 
@@ -2074,9 +2096,53 @@ step msg model =
                     ( model, Cmd.none )
 
         DismissShareCopied ->
-            ( { model | shareModal = Maybe.map (\sm -> { sm | copied = False }) model.shareModal }
+            ( { model | shareModal = Maybe.map (\sm -> { sm | copied = False, copiedParticipant = False, copiedHost = False }) model.shareModal }
             , Cmd.none
             )
+
+        ToggleReverseSharing ->
+            ( { model | shareModal = Maybe.map (ShareModal.update ShareModal.ToggleReverseSharing) model.shareModal }
+            , Cmd.none
+            )
+
+        ShareModalMsg subMsg ->
+            ( { model | shareModal = Maybe.map (ShareModal.update subMsg) model.shareModal }
+            , Cmd.none
+            )
+
+        CopyParticipantUrl ->
+            case model.shareModal of
+                Just sm ->
+                    let
+                        url =
+                            ShareModal.computeReverseParticipantUrl model.baseUrl sm.reverseRoomId sm.selected model.free model.studio.document model.inventory
+                    in
+                    ( { model | shareModal = Just { sm | copiedParticipant = True } }
+                    , Cmd.batch
+                        [ Ports.copyTextToClipboard url
+                        , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        CopyHostUrl ->
+            case model.shareModal of
+                Just sm ->
+                    let
+                        url =
+                            ShareModal.computeReverseHostUrl model.baseUrl sm.reverseRoomId
+                    in
+                    ( { model | shareModal = Just { sm | copiedHost = True } }
+                    , Cmd.batch
+                        [ Ports.copyTextToClipboard url
+                        , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         ShareEditableModel ->
             if model.free then
@@ -2860,6 +2926,9 @@ view model =
                             , onClose = CloseShareModal
                             , onSelectKind = SelectShareKind
                             , onCopyUrl = CopyShareUrl
+                            , onToggleReverseSharing = ToggleReverseSharing
+                            , onCopyParticipantUrl = CopyParticipantUrl
+                            , onCopyHostUrl = CopyHostUrl
                             }
                             sm
 

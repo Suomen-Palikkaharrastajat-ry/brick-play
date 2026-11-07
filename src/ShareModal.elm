@@ -1,16 +1,25 @@
 module ShareModal exposing
     ( Config
     , Model
+    , Msg(..)
     , ShareKind(..)
     , availableKinds
+    , computeBase64
     , computeHash
+    , computeReverseHostUrl
+    , computeReverseParticipantUrl
     , computeUrl
     , computeUrlWithLive
     , defaultKind
+    , defaultReverseRoomId
+    , generateRoomId
     , hasPlacedUnglued
     , init
+    , initWithRoomId
+    , isReverseSharingApplicable
     , kindToTestId
     , payloadFor
+    , update
     , view
     , viewWithLanguage
     )
@@ -29,6 +38,7 @@ and camera readability with a 16px white quiet zone.
 
 -}
 
+import Array
 import Base64
 import Flate
 import Html exposing (Html, button, div, h2, text)
@@ -59,7 +69,34 @@ type ShareKind
 type alias Model =
     { selected : ShareKind
     , copied : Bool
+    , reverseSharing : Bool
+    , reverseRoomId : String
+    , copiedParticipant : Bool
+    , copiedHost : Bool
     }
+
+
+{-| Messages handled by ShareModal.
+-}
+type Msg
+    = ToggleReverseSharing
+    | SetReverseSharing Bool
+    | SetReverseRoomId String
+
+
+{-| Update ShareModal model state.
+-}
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        ToggleReverseSharing ->
+            { model | reverseSharing = not model.reverseSharing }
+
+        SetReverseSharing val ->
+            { model | reverseSharing = val }
+
+        SetReverseRoomId roomId ->
+            { model | reverseRoomId = roomId }
 
 
 {-| Configuration and callbacks needed to render the modal.
@@ -77,7 +114,58 @@ type alias Config msg =
     , onClose : msg
     , onSelectKind : ShareKind -> msg
     , onCopyUrl : msg
+    , onToggleReverseSharing : msg
+    , onCopyParticipantUrl : msg
+    , onCopyHostUrl : msg
     }
+
+
+{-| Default room alphabet matching WebRTC signaling (excludes 0, 1, O, I).
+-}
+roomAlphabet : String
+roomAlphabet =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+{-| Deterministic fallback room ID.
+-}
+defaultReverseRoomId : String
+defaultReverseRoomId =
+    "7K9P2X4"
+
+
+{-| Deterministically generate a 7-character room ID from an integer seed.
+-}
+generateRoomId : Int -> String
+generateRoomId seed =
+    let
+        charsArray =
+            Array.fromList (String.toList roomAlphabet)
+
+        step ( currentSeed, acc ) =
+            let
+                nextSeed =
+                    modBy 2147483647 (abs (currentSeed * 1664525 + 1013904223))
+
+                idx =
+                    modBy (Array.length charsArray) nextSeed
+
+                char =
+                    Array.get idx charsArray |> Maybe.withDefault 'A'
+            in
+            ( nextSeed, char :: acc )
+
+        ( _, resultChars ) =
+            List.foldl (\_ state -> step state) ( abs seed + 1, [] ) (List.range 1 7)
+    in
+    String.fromList (List.reverse resultChars)
+
+
+{-| Check whether reverse sharing can be toggled for the kind.
+-}
+isReverseSharingApplicable : ShareKind -> Bool
+isReverseSharingApplicable kind =
+    kind /= LivePreview
 
 
 {-| Initialize the share modal with a selected kind.
@@ -86,6 +174,28 @@ init : ShareKind -> Model
 init kind =
     { selected = kind
     , copied = False
+    , reverseSharing = False
+    , reverseRoomId = defaultReverseRoomId
+    , copiedParticipant = False
+    , copiedHost = False
+    }
+
+
+{-| Initialize the share modal with a specific room ID.
+-}
+initWithRoomId : String -> ShareKind -> Model
+initWithRoomId roomId kind =
+    { selected = kind
+    , copied = False
+    , reverseSharing = False
+    , reverseRoomId =
+        if String.isEmpty roomId then
+            defaultReverseRoomId
+
+        else
+            roomId
+    , copiedParticipant = False
+    , copiedHost = False
     }
 
 
@@ -179,11 +289,10 @@ payloadFor kind free doc inventory =
             Link.freeHash doc
 
 
-{-| Compute the pure high-density hash string (`#b/...`) for a share kind.
-Uses raw deflate compression via `Flate.deflate` and base64url encoding.
+{-| Compute base64url compressed payload for a share kind.
 -}
-computeHash : ShareKind -> Bool -> Document -> List KitItem -> String
-computeHash kind free doc inventory =
+computeBase64 : ShareKind -> Bool -> Document -> List KitItem -> String
+computeBase64 kind free doc inventory =
     let
         bytesList =
             payloadFor kind free doc inventory
@@ -191,15 +300,59 @@ computeHash kind free doc inventory =
         compressed =
             HashPayload.listToBytes bytesList
                 |> Flate.deflate
-
-        base64Url =
-            Base64.fromBytes compressed
-                |> Maybe.withDefault ""
-                |> String.replace "+" "-"
-                |> String.replace "/" "_"
-                |> String.replace "=" ""
     in
-    "#b/" ++ base64Url
+    Base64.fromBytes compressed
+        |> Maybe.withDefault ""
+        |> String.replace "+" "-"
+        |> String.replace "/" "_"
+        |> String.replace "=" ""
+
+
+{-| Compute the pure high-density hash string (`#b/...`) for a share kind.
+Uses raw deflate compression via `Flate.deflate` and base64url encoding.
+-}
+computeHash : ShareKind -> Bool -> Document -> List KitItem -> String
+computeHash kind free doc inventory =
+    "#b/" ++ computeBase64 kind free doc inventory
+
+
+{-| Clean base URL by removing hash fragment.
+-}
+cleanBaseUrl : String -> String
+cleanBaseUrl baseUrl =
+    case String.split "#" baseUrl of
+        first :: _ ->
+            first
+
+        [] ->
+            baseUrl
+
+
+{-| Compute the participant URL for reverse sharing:
+`${baseUrl}#/reverse/${roomId}/b/${base64url}`
+-}
+computeReverseParticipantUrl : String -> String -> ShareKind -> Bool -> Document -> List KitItem -> String
+computeReverseParticipantUrl baseUrl roomId kind free doc inventory =
+    let
+        clean =
+            cleanBaseUrl baseUrl
+
+        b64 =
+            computeBase64 kind free doc inventory
+    in
+    clean ++ "#/reverse/" ++ roomId ++ "/b/" ++ b64
+
+
+{-| Compute the host grid URL for reverse sharing:
+`${baseUrl}#/grid/${roomId}`
+-}
+computeReverseHostUrl : String -> String -> String
+computeReverseHostUrl baseUrl roomId =
+    let
+        clean =
+            cleanBaseUrl baseUrl
+    in
+    clean ++ "#/grid/" ++ roomId
 
 
 {-| Compute the full URL for a share kind, ensuring no double hashes.
@@ -431,8 +584,26 @@ viewWithLanguage lang config model =
                         , Attr.style "flex-direction" "column"
                         , Attr.style "gap" "12px"
                         ]
-                        [ viewQrCode lang fullUrl
-                        , viewCopyButton lang model.copied config.onCopyUrl
+                        [ viewReverseToggle lang model.reverseSharing config.onToggleReverseSharing
+                        , if model.reverseSharing then
+                            div
+                                [ Attr.style "display" "flex"
+                                , Attr.style "flex-direction" "column"
+                                , Attr.style "gap" "12px"
+                                ]
+                                [ viewParticipantCard lang config model
+                                , viewHostCard lang config model
+                                ]
+
+                          else
+                            div
+                                [ Attr.style "display" "flex"
+                                , Attr.style "flex-direction" "column"
+                                , Attr.style "gap" "12px"
+                                ]
+                                [ viewQrCode lang fullUrl
+                                , viewCopyButton lang model.copied config.onCopyUrl
+                                ]
                         ]
                 ]
             ]
@@ -698,11 +869,11 @@ viewQrCode lang url =
             text ""
 
 
-viewCopyButton : Language -> Bool -> msg -> Html msg
-viewCopyButton lang copied onCopy =
+viewCopyButtonCustom : Bool -> String -> String -> msg -> String -> Html msg
+viewCopyButtonCustom copied normalText copiedText onCopy testId =
     button
         [ Attr.type_ "button"
-        , Attr.attribute "data-testid" "share-copy-button"
+        , Attr.attribute "data-testid" testId
         , Html.Events.onClick onCopy
         , Attr.style "min-height" "44px"
         , Attr.style "width" "100%"
@@ -731,7 +902,7 @@ viewCopyButton lang copied onCopy =
             )
         , Attr.style "color"
             (if copied then
-                "#ffffff"
+                Theme.textOnDark
 
              else
                 Theme.brand
@@ -747,9 +918,381 @@ viewCopyButton lang copied onCopy =
             )
         , text
             (if copied then
-                I18n.shareCopiedLink lang
+                copiedText
 
              else
-                I18n.shareCopyLink lang
+                normalText
             )
         ]
+
+
+viewCopyButton : Language -> Bool -> msg -> Html msg
+viewCopyButton lang copied onCopy =
+    viewCopyButtonCustom
+        copied
+        (I18n.shareCopyLink lang)
+        (I18n.shareCopiedLink lang)
+        onCopy
+        "share-copy-button"
+
+
+viewReverseToggle : Language -> Bool -> msg -> Html msg
+viewReverseToggle lang isReverse onToggle =
+    div
+        [ Attr.attribute "role" "checkbox"
+        , Attr.attribute "aria-checked"
+            (if isReverse then
+                "true"
+
+             else
+                "false"
+            )
+        , Attr.attribute "tabindex" "0"
+        , Attr.attribute "data-testid" "reverse-sharing-toggle"
+        , Html.Events.onClick onToggle
+        , Attr.style "min-height" "48px"
+        , Attr.style "display" "flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "gap" "10px"
+        , Attr.style "padding" "8px 12px"
+        , Attr.style "border-radius" "8px"
+        , Attr.style "border"
+            (if isReverse then
+                "2px solid " ++ Theme.brandYellow
+
+             else
+                "1px solid " ++ Theme.borderDefault
+            )
+        , Attr.style "background"
+            (if isReverse then
+                Theme.panelSubtleBackground
+
+             else
+                "transparent"
+            )
+        , Attr.style "cursor" "pointer"
+        , Attr.style "box-sizing" "border-box"
+        ]
+        [ div
+            [ Attr.style "width" "18px"
+            , Attr.style "height" "18px"
+            , Attr.style "border-radius" "4px"
+            , Attr.style "border"
+                ("2px solid "
+                    ++ (if isReverse then
+                            Theme.brandYellow
+
+                        else
+                            Theme.textMuted
+                       )
+                )
+            , Attr.style "display" "flex"
+            , Attr.style "align-items" "center"
+            , Attr.style "justify-content" "center"
+            , Attr.style "flex-shrink" "0"
+            , Attr.style "background"
+                (if isReverse then
+                    Theme.brandYellow
+
+                 else
+                    "transparent"
+                )
+            , Attr.style "color" Theme.brand
+            ]
+            [ if isReverse then
+                Icon.featherSized 12 "check"
+
+              else
+                text ""
+            ]
+        , div
+            [ Attr.style "display" "flex"
+            , Attr.style "flex-direction" "column"
+            , Attr.style "gap" "2px"
+            ]
+            [ div
+                [ Attr.style "font-size" "13px"
+                , Attr.style "font-weight" "600"
+                , Attr.style "color" Theme.textPrimary
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Käänteinen jakaminen (seurantaruudukko)"
+
+                        En ->
+                            "Reverse sharing (participant grid)"
+                    )
+                ]
+            , div
+                [ Attr.style "font-size" "11px"
+                , Attr.style "color" Theme.textMuted
+                , Attr.style "line-height" "1.3"
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Kerää osallistujien mallit reaaliaikaiseen ruudukkoon"
+
+                        En ->
+                            "Collect participants' builds into a real-time monitoring grid"
+                    )
+                ]
+            ]
+        ]
+
+
+viewParticipantCard : Language -> Config msg -> Model -> Html msg
+viewParticipantCard lang config model =
+    let
+        participantUrl =
+            computeReverseParticipantUrl config.baseUrl model.reverseRoomId model.selected config.free config.document config.inventory
+    in
+    div
+        [ Attr.attribute "data-testid" "reverse-participant-card"
+        , Attr.style "display" "flex"
+        , Attr.style "flex-direction" "column"
+        , Attr.style "gap" "10px"
+        , Attr.style "padding" "12px"
+        , Attr.style "border-radius" "8px"
+        , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+        , Attr.style "background" Theme.panelSubtleBackground
+        ]
+        [ div
+            [ Attr.style "display" "flex"
+            , Attr.style "flex-direction" "column"
+            , Attr.style "gap" "2px"
+            ]
+            [ div
+                [ Attr.style "font-size" "13px"
+                , Attr.style "font-weight" "600"
+                , Attr.style "color" Theme.textPrimary
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Osallistujan linkki"
+
+                        En ->
+                            "Participant link"
+                    )
+                ]
+            , div
+                [ Attr.style "font-size" "11px"
+                , Attr.style "color" Theme.textMuted
+                , Attr.style "line-height" "1.3"
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi."
+
+                        En ->
+                            "Share this link with builders. Each participant will appear in real time on your grid."
+                    )
+                ]
+            ]
+        , Html.input
+            [ Attr.type_ "text"
+            , Attr.readonly True
+            , Attr.value participantUrl
+            , Attr.attribute "data-testid" "participant-url-field"
+            , Attr.style "width" "100%"
+            , Attr.style "padding" "8px 10px"
+            , Attr.style "border-radius" "6px"
+            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+            , Attr.style "background" Theme.panelSurface
+            , Attr.style "color" Theme.textPrimary
+            , Attr.style "font-size" "11px"
+            , Attr.style "font-family" "monospace"
+            , Attr.style "box-sizing" "border-box"
+            ]
+            []
+        , viewCopyButtonCustom
+            model.copiedParticipant
+            (case lang of
+                Fi ->
+                    "Kopioi linkki"
+
+                En ->
+                    "Copy link"
+            )
+            (case lang of
+                Fi ->
+                    "Kopioitu!"
+
+                En ->
+                    "Copied!"
+            )
+            config.onCopyParticipantUrl
+            "copy-participant-url"
+        , viewParticipantQrCode lang participantUrl
+        ]
+
+
+viewHostCard : Language -> Config msg -> Model -> Html msg
+viewHostCard lang config model =
+    let
+        hostUrl =
+            computeReverseHostUrl config.baseUrl model.reverseRoomId
+    in
+    div
+        [ Attr.attribute "data-testid" "reverse-host-card"
+        , Attr.style "display" "flex"
+        , Attr.style "flex-direction" "column"
+        , Attr.style "gap" "10px"
+        , Attr.style "padding" "12px"
+        , Attr.style "border-radius" "8px"
+        , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+        , Attr.style "background" Theme.panelSubtleBackground
+        ]
+        [ div
+            [ Attr.style "display" "flex"
+            , Attr.style "flex-direction" "column"
+            , Attr.style "gap" "2px"
+            ]
+            [ div
+                [ Attr.style "font-size" "13px"
+                , Attr.style "font-weight" "600"
+                , Attr.style "color" Theme.textPrimary
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Oma seurantaruudukko"
+
+                        En ->
+                            "Host grid link"
+                    )
+                ]
+            , div
+                [ Attr.style "font-size" "11px"
+                , Attr.style "color" Theme.textMuted
+                , Attr.style "line-height" "1.3"
+                ]
+                [ text
+                    (case lang of
+                        Fi ->
+                            "Pidä tämä linkki itselläsi nähdäksesi kaikki osallistujat."
+
+                        En ->
+                            "Keep this link to yourself to monitor all participants."
+                    )
+                ]
+            ]
+        , Html.input
+            [ Attr.type_ "text"
+            , Attr.readonly True
+            , Attr.value hostUrl
+            , Attr.attribute "data-testid" "host-url-field"
+            , Attr.style "width" "100%"
+            , Attr.style "padding" "8px 10px"
+            , Attr.style "border-radius" "6px"
+            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+            , Attr.style "background" Theme.panelSurface
+            , Attr.style "color" Theme.textPrimary
+            , Attr.style "font-size" "11px"
+            , Attr.style "font-family" "monospace"
+            , Attr.style "box-sizing" "border-box"
+            ]
+            []
+        , div
+            [ Attr.style "display" "flex"
+            , Attr.style "flex-direction" "column"
+            , Attr.style "gap" "8px"
+            ]
+            [ viewCopyButtonCustom
+                model.copiedHost
+                (case lang of
+                    Fi ->
+                        "Kopioi ruudukkolinkki"
+
+                    En ->
+                        "Copy grid link"
+                )
+                (case lang of
+                    Fi ->
+                        "Kopioitu!"
+
+                    En ->
+                        "Copied!"
+                )
+                config.onCopyHostUrl
+                "copy-host-url"
+            , Html.a
+                [ Attr.href hostUrl
+                , Attr.target "_blank"
+                , Attr.rel "noopener noreferrer"
+                , Attr.attribute "data-testid" "open-host-grid"
+                , Attr.style "min-height" "44px"
+                , Attr.style "width" "100%"
+                , Attr.style "display" "inline-flex"
+                , Attr.style "align-items" "center"
+                , Attr.style "justify-content" "center"
+                , Attr.style "gap" "8px"
+                , Attr.style "padding" "10px 16px"
+                , Attr.style "border-radius" "8px"
+                , Attr.style "font-weight" "600"
+                , Attr.style "font-size" "13px"
+                , Attr.style "text-decoration" "none"
+                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+                , Attr.style "background" Theme.panelSurface
+                , Attr.style "color" Theme.textPrimary
+                , Attr.style "box-sizing" "border-box"
+                ]
+                [ Icon.feather "grid"
+                , text
+                    (case lang of
+                        Fi ->
+                            "Avaa ruudukko"
+
+                        En ->
+                            "Open grid"
+                    )
+                ]
+            ]
+        ]
+
+
+viewParticipantQrCode : Language -> String -> Html msg
+viewParticipantQrCode lang url =
+    case QRCode.fromString url of
+        Ok qrCode ->
+            div
+                [ Attr.attribute "data-testid" "participant-qr-container"
+                , Attr.style "display" "flex"
+                , Attr.style "flex-direction" "column"
+                , Attr.style "align-items" "center"
+                , Attr.style "gap" "8px"
+                , Attr.style "margin" "8px 0"
+                ]
+                [ div
+                    [ Attr.attribute "data-testid" "participant-qr-code"
+                    , Attr.style "background" Theme.panelSurface
+                    , Attr.style "padding" "16px"
+                    , Attr.style "border-radius" "8px"
+                    , Attr.style "display" "flex"
+                    , Attr.style "align-items" "center"
+                    , Attr.style "justify-content" "center"
+                    , Attr.style "box-shadow" "0 2px 6px rgba(0, 0, 0, 0.15)"
+                    , Attr.style "width" "200px"
+                    , Attr.style "height" "200px"
+                    , Attr.style "box-sizing" "border-box"
+                    ]
+                    [ QRCode.toSvg
+                        [ Svg.Attributes.width "100%"
+                        , Svg.Attributes.height "100%"
+                        ]
+                        qrCode
+                    ]
+                , div
+                    [ Attr.attribute "data-testid" "share-qr-hint"
+                    , Attr.style "font-size" "11px"
+                    , Attr.style "color" Theme.textMuted
+                    , Attr.style "text-align" "center"
+                    ]
+                    [ text (I18n.shareScanQrHint lang) ]
+                ]
+
+        Err _ ->
+            text ""
