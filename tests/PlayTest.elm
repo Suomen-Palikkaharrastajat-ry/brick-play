@@ -982,17 +982,20 @@ shareModalTests =
                 in
                 Expect.all
                     [ \_ ->
-                        Expect.equal [ ShareModal.PartsSet, ShareModal.FixedModel ]
+                        Expect.equal [ ShareModal.PartsSet, ShareModal.FixedModel, ShareModal.LivePreview ]
                             (ShareModal.availableKinds { free = False, hasInventory = True, hasPlacedUnglued = False })
                     , \_ ->
-                        Expect.equal [ ShareModal.PartsSet, ShareModal.PartialSet, ShareModal.FixedModel ]
+                        Expect.equal [ ShareModal.PartsSet, ShareModal.PartialSet, ShareModal.FixedModel, ShareModal.LivePreview ]
                             (ShareModal.availableKinds { free = False, hasInventory = True, hasPlacedUnglued = True })
                     , \_ ->
-                        Expect.equal [ ShareModal.FreeBuilding, ShareModal.PartsSet, ShareModal.FixedModel ]
+                        Expect.equal [ ShareModal.FreeBuilding, ShareModal.PartsSet, ShareModal.FixedModel, ShareModal.LivePreview ]
                             (ShareModal.availableKinds { free = True, hasInventory = False, hasPlacedUnglued = False })
                     , \_ ->
                         Query.fromHtml (view modalOpen)
                             |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-partial") ]
+                    , \_ ->
+                        Query.fromHtml (view modalOpen)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-live") ]
                     , \_ ->
                         case selectedFixed.shareModal of
                             Just sm ->
