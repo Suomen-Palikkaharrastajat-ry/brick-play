@@ -698,7 +698,7 @@ shareTests =
                     [ \m -> Expect.equal True m.free
                     , \m -> Expect.equal 6 (List.length (placementIds m))
                     , \m -> Expect.equal [ 0 ] (gluedIds m)
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    , \_ -> Query.fromHtml (view reopened) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Share...") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
@@ -720,7 +720,7 @@ shareTests =
                         Query.fromHtml (view modalOpen)
                 in
                 Expect.all
-                    [ \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    [ \_ -> Query.fromHtml (view setModel) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Share...") ]
                     , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]
@@ -755,7 +755,7 @@ shareTests =
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "part-dock") ]
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Kit") ]
                     , \_ -> rendered |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Parts") ]
-                    , \_ -> renderedMenu |> Query.has [ Selector.text "Share..." ]
+                    , \_ -> Query.fromHtml (view fixedModel) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Share...") ]
                     , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-free") ]
                     , \_ -> renderedModal |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-kind-parts") ]
                     , \_ -> renderedModal |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-kind-fixed") ]

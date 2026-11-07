@@ -1306,12 +1306,13 @@ menuTests =
                 in
                 Query.fromHtml (view opened)
                     |> Expect.all
-                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 7)
-                        , Query.has [ Selector.text "Share..." ]
+                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 5)
+                        , Query.has [ Selector.attribute (Attr.attribute "aria-label" "Share...") ]
                         , Query.hasNot [ Selector.text "Share editable model" ]
                         , Query.hasNot [ Selector.text "Share parts set" ]
                         , Query.hasNot [ Selector.text "Share fixed model" ]
-                        , Query.has [ Selector.text "Language: English (Suomeksi)" ]
+                        , Query.has [ Selector.text "Suomi" ]
+                        , Query.has [ Selector.text "In English" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
                         , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 5)
                         , Query.hasNot [ Selector.attribute (Attr.attribute "aria-orientation" "vertical") ]

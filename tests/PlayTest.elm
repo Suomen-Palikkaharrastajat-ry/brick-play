@@ -651,12 +651,13 @@ menuTests =
                 in
                 Query.fromHtml (view opened)
                     |> Expect.all
-                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 7)
-                        , Query.has [ Selector.text "Share..." ]
+                        [ Query.findAll [ Selector.attribute (Attr.attribute "role" "menuitem") ] >> Query.count (Expect.equal 5)
+                        , Query.has [ Selector.attribute (Attr.attribute "aria-label" "Share...") ]
                         , Query.hasNot [ Selector.text "Share editable model" ]
                         , Query.hasNot [ Selector.text "Share parts set" ]
                         , Query.hasNot [ Selector.text "Share fixed model" ]
-                        , Query.has [ Selector.text "Language: English (Suomeksi)" ]
+                        , Query.has [ Selector.text "Suomi" ]
+                        , Query.has [ Selector.text "In English" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
                         , Query.has [ Selector.text "Ctrl+Shift+Z" ]
                         ]
@@ -1277,7 +1278,8 @@ touchTests =
                     in
                     Query.fromHtml (view opened)
                         |> Expect.all
-                            [ Query.has [ Selector.text "Kieli: Suomi (In English)" ]
+                            [ Query.has [ Selector.containing [ Selector.text "Suomi" ], Selector.attribute (Attr.attribute "aria-pressed" "true") ]
+                            , Query.has [ Selector.containing [ Selector.text "In English" ], Selector.attribute (Attr.attribute "aria-pressed" "false") ]
                             , Query.has [ Selector.text "Lataa BrickLink Studio (.io)" ]
                             , Query.has [ Selector.text "Kumoa" ]
                             , Query.has [ Selector.text "Tee uudelleen" ]
@@ -1303,7 +1305,7 @@ touchTests =
                         [ \_ -> Expect.equal I18n.En modelEn.language
                         , \_ ->
                             Query.fromHtml (view openedEn)
-                                |> Query.has [ Selector.text "Language: English (Suomeksi)" ]
+                                |> Query.has [ Selector.containing [ Selector.text "In English" ], Selector.attribute (Attr.attribute "aria-pressed" "true") ]
                         ]
                         ()
             , test "Finnish free dock shows Finnish tab labels" <|

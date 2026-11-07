@@ -114,6 +114,7 @@ entriesFor tab =
             , entry "3038.dat" "Slope 45° 2 x 3" "45° slope, 2 x 3"
             , entry "3037.dat" "Slope 45° 2 x 4" "45° slope, 2 x 4"
             , entry "3298.dat" "Slope 33° 3 x 2" "33° slope, 3 x 2"
+            , entry "54200.dat" "Slope 31° 1 x 1 x 2/3" "1 x 1 cheese slope"
             , entry "3070b.dat" "Tile 1 x 1" "1 x 1 tile with groove"
             , entry "3069b.dat" "Tile 1 x 2" "1 x 2 tile with groove"
             , entry "3068b.dat" "Tile 2 x 2" "2 x 2 tile with groove"

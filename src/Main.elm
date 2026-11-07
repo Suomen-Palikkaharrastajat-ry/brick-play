@@ -270,7 +270,46 @@ black, blue, green, red, white, light bluish gray, tan, yellow).
 -}
 paintColours : List Int
 paintColours =
-    [ 14, 15, 4, 1, 2, 0, 71, 19 ]
+    -- Original favorites
+    [ 14
+    , 15
+    , 4
+    , 1
+    , 2
+    , 0
+    , 71
+    , 19
+
+    -- Additional solids
+    , 5
+    , 3
+    , 6
+    , 27
+    , 28
+    , 72
+    , 84
+    , 86
+    , 89
+    , 212
+    , 226
+    , 268
+    , 85
+
+    -- Translucent / water colors
+    , 47
+    , 43
+    , 41
+    , 33
+    , 34
+    , 35
+    , 42
+    , 36
+    , 57
+    , 46
+    , 52
+    , 10375
+    , 293
+    ]
 
 
 {-| Messages handled by the Brick Play application.
@@ -2453,6 +2492,7 @@ view model =
             ]
             [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
             , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
+            , shareButton model.language
             , helpButton model.language
             , if technicMode model then
                 playButton model.language model.playing
@@ -3183,8 +3223,8 @@ gearRow model =
             text ""
 
 
-{-| The top-left menu: share options for the current mode, download .io, undo,
-redo, delete and clear. Each item does what its keyboard shortcut does.
+{-| The top-left menu: download .io, undo, redo, delete and clear. Each item
+does what its keyboard shortcut does.
 -}
 menuConfig : Model -> HamburgerMenu.Config Msg
 menuConfig model =
@@ -3192,42 +3232,47 @@ menuConfig model =
     , open = model.menuOpen
     , onToggle = ToggleMenu
     , onClose = CloseMenu
+    , languageToggle =
+        Just
+            { current = model.language
+            , onSelect = SetLanguage
+            }
     , items =
-        shareMenuItems model
-            ++ [ { label =
-                    case model.language of
-                        Fi ->
-                            "Kieli: Suomi (In English)"
-
-                        En ->
-                            "Language: English (Suomeksi)"
-                 , shortcut = ""
-                 , enabled = True
-                 , onSelect =
-                    SetLanguage
-                        (case model.language of
-                            Fi ->
-                                En
-
-                            En ->
-                                Fi
-                        )
-                 }
-               , { label = I18n.menuDownloadIo model.language, shortcut = "", enabled = not (List.isEmpty (Core.getPlacements model.studio)), onSelect = MenuPicked DownloadIo }
-               , { label = I18n.menuUndo model.language, shortcut = "Ctrl+Z", enabled = Core.canUndo model.studio, onSelect = MenuPicked Undo }
-               , { label = I18n.menuRedo model.language, shortcut = "Ctrl+Shift+Z", enabled = Core.canRedo model.studio, onSelect = MenuPicked Redo }
-               , { label = I18n.menuDelete model.language, shortcut = "Del", enabled = Core.hasSelection model.studio, onSelect = MenuPicked Delete }
-               , { label = I18n.menuClear model.language, shortcut = "", enabled = clearable model, onSelect = MenuPicked Clear }
-               ]
+        [ { label = I18n.menuDownloadIo model.language, shortcut = "", enabled = not (List.isEmpty (Core.getPlacements model.studio)), onSelect = MenuPicked DownloadIo }
+        , { label = I18n.menuUndo model.language, shortcut = "Ctrl+Z", enabled = Core.canUndo model.studio, onSelect = MenuPicked Undo }
+        , { label = I18n.menuRedo model.language, shortcut = "Ctrl+Shift+Z", enabled = Core.canRedo model.studio, onSelect = MenuPicked Redo }
+        , { label = I18n.menuDelete model.language, shortcut = "Del", enabled = Core.hasSelection model.studio, onSelect = MenuPicked Delete }
+        , { label = I18n.menuClear model.language, shortcut = "", enabled = clearable model, onSelect = MenuPicked Clear }
+        ]
     }
 
 
-{-| The share item the top-left menu offers.
+{-| The visible share button: it opens the share modal, situated between the
+hamburger menu and the help button.
 -}
-shareMenuItems : Model -> List (HamburgerMenu.Item Msg)
-shareMenuItems model =
-    [ { label = I18n.menuShare model.language, shortcut = "", enabled = True, onSelect = MenuPicked OpenShareModal }
-    ]
+shareButton : Language -> Html Msg
+shareButton lang =
+    button
+        [ onClick OpenShareModal
+        , Attr.attribute "aria-label" (I18n.menuShare lang)
+        , Attr.title (I18n.menuShare lang)
+        , Attr.style "display" "flex"
+        , Attr.style "flex-shrink" "0"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "width" "2.25rem"
+        , Attr.style "height" "2.25rem"
+        , Attr.style "padding" "0"
+        , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
+        , Attr.style "border-radius" "0.5rem"
+        , Attr.style "background" "rgba(5, 19, 29, 0.85)"
+        , Attr.style "color" "var(--color-text-on-dark)"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "pointer-events" "auto"
+        , Attr.style "transition" "all 150ms ease"
+        , Attr.class "touch-target"
+        ]
+        [ Icon.featherSized 18 "share-2" ]
 
 
 {-| Whether Clear has anything to remove: any part in free building, else any
@@ -3615,9 +3660,13 @@ colourRow model =
             )
         , Attr.style "display" "grid"
         , Attr.style "grid-template-columns" "repeat(2, 1.125rem)"
-        , Attr.style "grid-template-rows" "repeat(4, 1.125rem)"
+        , Attr.style "grid-auto-rows" "1.125rem"
         , Attr.style "gap" "0.25rem"
-        , Attr.style "align-content" "center"
+        , Attr.style "max-height" "calc(100% - 0.25rem)"
+        , Attr.style "overflow-y" "auto"
+        , Attr.style "overflow-x" "hidden"
+        , Attr.style "scrollbar-width" "thin"
+        , Attr.style "align-content" "start"
         , Attr.style "flex-shrink" "0"
         ]
         (List.map (swatch model.paintColour) paintColours)
@@ -3659,13 +3708,28 @@ swatch chosen code =
 swatchBackground : Int -> String
 swatchBackground code =
     let
-        rgb =
+        rgba =
             Colors.resolveColor code 16
-
-        channel value =
-            String.fromInt (round (value * 255))
     in
-    "rgb(" ++ channel rgb.r ++ ", " ++ channel rgb.g ++ ", " ++ channel rgb.b ++ ")"
+    if rgba.alpha < 0.99 then
+        "rgba("
+            ++ String.fromInt (round (rgba.r * 255))
+            ++ ", "
+            ++ String.fromInt (round (rgba.g * 255))
+            ++ ", "
+            ++ String.fromInt (round (rgba.b * 255))
+            ++ ", "
+            ++ String.fromFloat rgba.alpha
+            ++ ")"
+
+    else
+        "rgb("
+            ++ String.fromInt (round (rgba.r * 255))
+            ++ ", "
+            ++ String.fromInt (round (rgba.g * 255))
+            ++ ", "
+            ++ String.fromInt (round (rgba.b * 255))
+            ++ ")"
 
 
 {-| The free dock's tabs, in a row. The search results replace the cards while a
