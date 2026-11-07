@@ -2,6 +2,7 @@ module Main exposing
     ( Flags
     , Model
     , Msg(..)
+    , Participant
     , accomplishmentBanner
     , accomplishmentBannerIn
     , clearable
@@ -12,6 +13,7 @@ module Main exposing
     , init
     , kitItemName
     , main
+    , parseReverseHostRoom
     , parseReverseParticipantRoom
     , remainingCount
     , remainingForItem
@@ -238,6 +240,22 @@ type alias Model =
     , reverseParticipantRoom : Maybe String
     , reverseStatus : String
     , participantName : String
+    , reverseHostRoom : Maybe String
+    , participants : Dict String Participant
+    , inspectedParticipant : Maybe String
+    }
+
+
+{-| A participant in a reverse sharing session.
+-}
+type alias Participant =
+    { id : String
+    , name : String
+    , bytes : List Int
+    , thumbnail : String
+    , brickCount : Int
+    , lastSeen : Int
+    , status : String
     }
 
 
@@ -404,6 +422,16 @@ type Msg
     | LiveStatusChanged String
     | LiveError String
     | ReverseStatusChanged String
+    | ReverseParticipantUpdated
+        { id : String
+        , name : String
+        , bytes : List Int
+        , thumbnail : String
+        , brickCount : Int
+        , lastSeen : Int
+        }
+    | ReverseParticipantLeft String
+    | InspectParticipant (Maybe String)
     | DismissToast Int
     | MenuPicked Msg
     | NoOp
@@ -520,6 +548,38 @@ parseReverseParticipantBase64 hash =
 
                 else
                     Just b64
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
+
+
+{-| Parse room ID from #/grid/:roomId
+-}
+parseReverseHostRoom : String -> Maybe String
+parseReverseHostRoom hash =
+    let
+        clean =
+            extractFragment hash
+                |> String.trim
+
+        stripped =
+            if String.startsWith "/" clean then
+                String.dropLeft 1 clean
+
+            else
+                clean
+    in
+    if String.startsWith "grid/" stripped then
+        case String.split "/" stripped of
+            _ :: roomId :: _ ->
+                if String.isEmpty roomId then
+                    Nothing
+
+                else
+                    Just (String.toUpper roomId)
 
             _ ->
                 Nothing
@@ -712,6 +772,9 @@ init flags =
         rRoom =
             parseReverseParticipantRoom flags.initialHash
 
+        rHostRoom =
+            parseReverseHostRoom flags.initialHash
+
         isViewerMode =
             vRoom /= Nothing
 
@@ -813,6 +876,9 @@ init flags =
                 else
                     ""
             , participantName = ""
+            , reverseHostRoom = rHostRoom
+            , participants = Dict.empty
+            , inspectedParticipant = Nothing
             }
 
         fetchViewportSize =
@@ -2368,7 +2434,32 @@ step msg model =
                     )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    case model.reverseHostRoom of
+                        Just roomId ->
+                            let
+                                url =
+                                    ShareModal.computeReverseParticipantUrl model.baseUrl roomId ShareModal.PartsSet model.free model.studio.document model.inventory
+
+                                toastMsg =
+                                    case model.language of
+                                        Fi ->
+                                            "Osallistujan linkki kopioitu leikepöydälle"
+
+                                        En ->
+                                            "Participant link copied to clipboard"
+
+                                ( toastModel, toastCmd ) =
+                                    showToast toastMsg model
+                            in
+                            ( toastModel
+                            , Cmd.batch
+                                [ Ports.copyTextToClipboard url
+                                , toastCmd
+                                ]
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
 
         CopyHostUrl ->
             case model.shareModal of
@@ -2499,6 +2590,103 @@ step msg model =
                         Cmd.none
             in
             ( { model | reverseStatus = status }, cmd )
+
+        ReverseParticipantUpdated data ->
+            let
+                participant =
+                    { id = data.id
+                    , name = data.name
+                    , bytes = data.bytes
+                    , thumbnail = data.thumbnail
+                    , brickCount = data.brickCount
+                    , lastSeen = data.lastSeen
+                    , status = "connected"
+                    }
+
+                newParticipants =
+                    Dict.insert data.id participant model.participants
+
+                newModel =
+                    { model | participants = newParticipants }
+            in
+            if model.inspectedParticipant == Just data.id then
+                case HashPayload.decodeBytes data.bytes of
+                    Just payload ->
+                        let
+                            doc =
+                                List.foldl (\p acc -> Document.setGlued True p.id acc)
+                                    payload.document
+                                    (Document.placements payload.document)
+
+                            ( resetStudio, studioCmd, _ ) =
+                                Core.resetDocument doc model.studio
+
+                            updatedStudio =
+                                resetStudio
+                                    |> Core.setGlueEditable False
+                                    |> Core.clearSelection
+                        in
+                        ( { newModel | studio = updatedStudio }
+                        , Cmd.map StudioMsg studioCmd
+                        )
+
+                    Nothing ->
+                        ( newModel, Cmd.none )
+
+            else
+                ( newModel, Cmd.none )
+
+        ReverseParticipantLeft id ->
+            case Dict.get id model.participants of
+                Just p ->
+                    let
+                        updated =
+                            { p | status = "disconnected" }
+                    in
+                    ( { model | participants = Dict.insert id updated model.participants }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        InspectParticipant maybeId ->
+            case maybeId of
+                Just id ->
+                    let
+                        modelWithInspect =
+                            { model | inspectedParticipant = Just id }
+                    in
+                    case Dict.get id model.participants of
+                        Just p ->
+                            case HashPayload.decodeBytes p.bytes of
+                                Just payload ->
+                                    let
+                                        doc =
+                                            List.foldl (\pl acc -> Document.setGlued True pl.id acc)
+                                                payload.document
+                                                (Document.placements payload.document)
+
+                                        ( resetStudio, studioCmd, _ ) =
+                                            Core.resetDocument doc model.studio
+
+                                        updatedStudio =
+                                            resetStudio
+                                                |> Core.setGlueEditable False
+                                                |> Core.clearSelection
+                                    in
+                                    ( { modelWithInspect | studio = updatedStudio }
+                                    , Cmd.map StudioMsg studioCmd
+                                    )
+
+                                Nothing ->
+                                    ( modelWithInspect, Cmd.none )
+
+                        Nothing ->
+                            ( modelWithInspect, Cmd.none )
+
+                Nothing ->
+                    ( { model | inspectedParticipant = Nothing }, Cmd.none )
 
         LiveError err ->
             showToast err model
@@ -3033,6 +3221,8 @@ subscriptions model =
         , Ports.liveStatusChanged LiveStatusChanged
         , Ports.liveError LiveError
         , Ports.reverseStatusChanged ReverseStatusChanged
+        , Ports.reverseParticipantUpdated ReverseParticipantUpdated
+        , Ports.reverseParticipantLeft ReverseParticipantLeft
         , if model.playing then
             Browser.Events.onAnimationFrameDelta Tick
 
@@ -3050,157 +3240,172 @@ view model =
             viewChromelessViewer model roomId
 
         Nothing ->
-            let
-                accomplished =
-                    technicMode model && Machine.isAccomplished model.machine
-
-                gearCount =
-                    List.length model.machine.gears
-            in
-            div
-                [ Attr.style "position" "fixed"
-                , Attr.style "inset" "0"
-                , Attr.style "overflow" "hidden"
-                , Attr.style "background" "var(--color-brand)"
-                , Attr.style "font-family" "var(--font-sans)"
-                ]
-                [ -- Top-left toolbar and status bar: the menu, help and play buttons sit at
-                  -- the top left, and temporary info pills (Bit drag, Tidy up, gear mesh
-                  -- status, first-select hint, touch part name, and accomplishment banner)
-                  -- grow horizontally beside them, keeping the vertical space above the
-                  -- brick palette free.
-                  header
-                    [ Attr.style "position" "absolute"
-                    , Attr.style "top" "0.75rem"
-                    , Attr.style "left" "0.75rem"
-                    , Attr.style "right" "0.75rem"
-                    , Attr.style "display" "flex"
-                    , Attr.style "flex-wrap" "wrap"
-                    , Attr.style "align-items" "center"
-                    , Attr.style "gap" "0.5rem"
-                    , Attr.style "z-index" "20"
-                    , Attr.style "pointer-events" "none"
-                    , keepFocusOnCanvas
-                    ]
-                    [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
-                    , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
-                    , shareButton model.language
-                    , helpButton model.language
-                    , if model.liveBroadcasting then
-                        livePill model
-
-                      else
-                        text ""
-                    , case model.reverseParticipantRoom of
-                        Just roomId ->
-                            reverseParticipantBadge model roomId
+            case model.reverseHostRoom of
+                Just roomId ->
+                    case model.inspectedParticipant of
+                        Just participantId ->
+                            viewInspectedParticipant model participantId
 
                         Nothing ->
-                            text ""
-                    , if technicMode model then
-                        playButton model.language model.playing
+                            viewReverseGrid model roomId
 
-                      else
-                        text ""
-                    , bitDragRow model
-                    , tidyRow model
-                    , if technicMode model then
-                        gearRow model
+                Nothing ->
+                    viewNormalBuilder model
 
-                      else
-                        text ""
-                    , hintRow model
-                    , touchLabel model
-                    , if accomplished then
-                        accomplishmentBannerIn model.language gearCount
 
-                      else
-                        text ""
-                    ]
+viewNormalBuilder : Model -> Html Msg
+viewNormalBuilder model =
+    let
+        accomplished =
+            technicMode model && Machine.isAccomplished model.machine
 
-                -- 3D WebGL Canvas
-                , Html.map StudioMsg (viewCanvas model)
+        gearCount =
+            List.length model.machine.gears
+    in
+    div
+        [ Attr.style "position" "fixed"
+        , Attr.style "inset" "0"
+        , Attr.style "overflow" "hidden"
+        , Attr.style "background" "var(--color-brand)"
+        , Attr.style "font-family" "var(--font-sans)"
+        ]
+        [ -- Top-left toolbar and status bar: the menu, help and play buttons sit at
+          -- the top left, and temporary info pills (Bit drag, Tidy up, gear mesh
+          -- status, first-select hint, touch part name, and accomplishment banner)
+          -- grow horizontally beside them, keeping the vertical space above the
+          -- brick palette free.
+          header
+            [ Attr.style "position" "absolute"
+            , Attr.style "top" "0.75rem"
+            , Attr.style "left" "0.75rem"
+            , Attr.style "right" "0.75rem"
+            , Attr.style "display" "flex"
+            , Attr.style "flex-wrap" "wrap"
+            , Attr.style "align-items" "center"
+            , Attr.style "gap" "0.5rem"
+            , Attr.style "z-index" "20"
+            , Attr.style "pointer-events" "none"
+            , keepFocusOnCanvas
+            ]
+            [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
+            , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
+            , shareButton model.language
+            , helpButton model.language
+            , if model.liveBroadcasting then
+                livePill model
 
-                -- The context ring beside the selected part, over the canvas
-                , ringView model
+              else
+                text ""
+            , case model.reverseParticipantRoom of
+                Just roomId ->
+                    reverseParticipantBadge model roomId
 
-                -- Camera control: on a wide window the camera globe sits bottom-right,
-                -- beside the dock. On a narrow window it shares the bottom row instead.
-                , if isNarrow model then
+                Nothing ->
                     text ""
+            , if technicMode model then
+                playButton model.language model.playing
 
-                  else
-                    div
-                        [ Attr.style "position" "absolute"
-                        , Attr.style "right" "0.75rem"
-                        , Attr.style "bottom" "0.75rem"
-                        , Attr.style "z-index" "10"
-                        ]
-                        [ globeControl model ]
-                , if model.helpOpen then
-                    -- Above the header and bottom area (z-index 10 and 20), which would
-                    -- otherwise cover the top and bottom of the dialog.
-                    div
-                        [ Attr.style "position" "absolute"
-                        , Attr.style "top" "0"
-                        , Attr.style "left" "0"
-                        , Attr.style "right" "0"
-                        , Attr.style "bottom" "0"
-                        , Attr.style "z-index" "30"
-                        , Attr.style "pointer-events" "none"
-                        ]
-                        [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
+              else
+                text ""
+            , bitDragRow model
+            , tidyRow model
+            , if technicMode model then
+                gearRow model
 
-                  else
-                    text ""
+              else
+                text ""
+            , hintRow model
+            , touchLabel model
+            , if accomplished then
+                accomplishmentBannerIn model.language gearCount
 
-                -- Bottom: the brick palette / kit dock (or narrow row with camera toggle)
-                , bottomArea model
-                , case model.toast of
-                    Just t ->
-                        viewToast t.message
+              else
+                text ""
+            ]
 
-                    Nothing ->
-                        text ""
-                , case model.snapshotModal of
-                    Just modal ->
-                        SnapshotModal.viewWithLanguage model.language
-                            { onSave = SnapshotSave
-                            , onClose = SnapshotClose
-                            }
-                            modal
+        -- 3D WebGL Canvas
+        , Html.map StudioMsg (viewCanvas model)
 
-                    Nothing ->
-                        text ""
-                , case model.shareModal of
-                    Just sm ->
-                        ShareModal.viewWithLanguage model.language
-                            { language = model.language
-                            , baseUrl = model.baseUrl
-                            , free = model.free
-                            , document = model.studio.document
-                            , inventory = model.inventory
-                            , liveBroadcasting = model.liveBroadcasting
-                            , liveWatchUrl = model.liveWatchUrl
-                            , liveViewerCount = model.liveViewerCount
-                            , onToggleBroadcast = ToggleBroadcast
-                            , onClose = CloseShareModal
-                            , onSelectKind = SelectShareKind
-                            , onCopyUrl = CopyShareUrl
-                            , onToggleReverseSharing = ToggleReverseSharing
-                            , onCopyParticipantUrl = CopyParticipantUrl
-                            , onCopyHostUrl = CopyHostUrl
-                            }
-                            sm
+        -- The context ring beside the selected part, over the canvas
+        , ringView model
 
-                    Nothing ->
-                        text ""
-                , if model.tidyOpen then
-                    tidyPanel model
+        -- Camera control: on a wide window the camera globe sits bottom-right,
+        -- beside the dock. On a narrow window it shares the bottom row instead.
+        , if isNarrow model then
+            text ""
 
-                  else
-                    text ""
+          else
+            div
+                [ Attr.style "position" "absolute"
+                , Attr.style "right" "0.75rem"
+                , Attr.style "bottom" "0.75rem"
+                , Attr.style "z-index" "10"
                 ]
+                [ globeControl model ]
+        , if model.helpOpen then
+            -- Above the header and bottom area (z-index 10 and 20), which would
+            -- otherwise cover the top and bottom of the dialog.
+            div
+                [ Attr.style "position" "absolute"
+                , Attr.style "top" "0"
+                , Attr.style "left" "0"
+                , Attr.style "right" "0"
+                , Attr.style "bottom" "0"
+                , Attr.style "z-index" "30"
+                , Attr.style "pointer-events" "none"
+                ]
+                [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
+
+          else
+            text ""
+
+        -- Bottom: the brick palette / kit dock (or narrow row with camera toggle)
+        , bottomArea model
+        , case model.toast of
+            Just t ->
+                viewToast t.message
+
+            Nothing ->
+                text ""
+        , case model.snapshotModal of
+            Just modal ->
+                SnapshotModal.viewWithLanguage model.language
+                    { onSave = SnapshotSave
+                    , onClose = SnapshotClose
+                    }
+                    modal
+
+            Nothing ->
+                text ""
+        , case model.shareModal of
+            Just sm ->
+                ShareModal.viewWithLanguage model.language
+                    { language = model.language
+                    , baseUrl = model.baseUrl
+                    , free = model.free
+                    , document = model.studio.document
+                    , inventory = model.inventory
+                    , liveBroadcasting = model.liveBroadcasting
+                    , liveWatchUrl = model.liveWatchUrl
+                    , liveViewerCount = model.liveViewerCount
+                    , onToggleBroadcast = ToggleBroadcast
+                    , onClose = CloseShareModal
+                    , onSelectKind = SelectShareKind
+                    , onCopyUrl = CopyShareUrl
+                    , onToggleReverseSharing = ToggleReverseSharing
+                    , onCopyParticipantUrl = CopyParticipantUrl
+                    , onCopyHostUrl = CopyHostUrl
+                    }
+                    sm
+
+            Nothing ->
+                text ""
+        , if model.tidyOpen then
+            tidyPanel model
+
+          else
+            text ""
+        ]
 
 
 viewChromelessViewer : Model -> String -> Html Msg
@@ -3272,6 +3477,507 @@ viewChromelessViewer model roomId =
             ]
 
         -- Camera Globe control for 3D inspection
+        , div
+            [ Attr.style "position" "absolute"
+            , Attr.style "right" "0.75rem"
+            , Attr.style "bottom" "0.75rem"
+            , Attr.style "z-index" "10"
+            ]
+            [ globeControl model ]
+
+        -- Toast messages (if any)
+        , case model.toast of
+            Just t ->
+                viewToast t.message
+
+            Nothing ->
+                text ""
+        ]
+
+
+viewReverseGrid : Model -> String -> Html Msg
+viewReverseGrid model roomId =
+    let
+        totalCount =
+            Dict.size model.participants
+
+        badgeText =
+            case model.language of
+                Fi ->
+                    "SEURANTARUUDUKKO · " ++ roomId
+
+                En ->
+                    "GRID STUDIO · " ++ roomId
+
+        activeCountText =
+            case model.language of
+                Fi ->
+                    String.fromInt totalCount
+                        ++ (if totalCount == 1 then
+                                " osallistuja"
+
+                            else
+                                " osallistujaa"
+                           )
+
+                En ->
+                    String.fromInt totalCount
+                        ++ (if totalCount == 1 then
+                                " participant"
+
+                            else
+                                " participants"
+                           )
+
+        copyButtonLabel =
+            case model.language of
+                Fi ->
+                    "Kopioi osallistujan linkki"
+
+                En ->
+                    "Copy participant link"
+
+        participantUrl =
+            ShareModal.computeReverseParticipantUrl model.baseUrl roomId ShareModal.PartsSet model.free model.studio.document model.inventory
+    in
+    div
+        [ Attr.style "position" "fixed"
+        , Attr.style "inset" "0"
+        , Attr.style "overflow-y" "auto"
+        , Attr.style "background" "var(--color-bg-page)"
+        , Attr.style "color" "var(--color-text-primary)"
+        , Attr.style "font-family" "var(--font-sans)"
+        , Attr.class "flex flex-col min-h-screen"
+        ]
+        [ -- Sticky top header
+          header
+            [ Attr.class "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b px-4 py-3 shadow-xs"
+            , Attr.style "background" "color-mix(in srgb, var(--color-bg-page) 95%, transparent)"
+            , Attr.style "border-color" "var(--color-border-default)"
+            , Attr.style "backdrop-filter" "blur(8px)"
+            , Attr.style "-webkit-backdrop-filter" "blur(8px)"
+            ]
+            [ div [ Attr.class "flex items-center gap-3" ]
+                [ span
+                    [ Attr.class "inline-flex items-center px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase border"
+                    , Attr.style "background" "var(--color-bg-subtle)"
+                    , Attr.style "border-color" "var(--color-border-default)"
+                    , Attr.style "color" "var(--color-text-primary)"
+                    ]
+                    [ text badgeText ]
+                , span
+                    [ Attr.class "text-sm font-medium"
+                    , Attr.style "color" "var(--color-text-muted)"
+                    ]
+                    [ text activeCountText ]
+                ]
+            , div [ Attr.class "flex items-center gap-2" ]
+                [ button
+                    [ Attr.type_ "button"
+                    , Attr.attribute "data-testid" "grid-copy-link"
+                    , onClick CopyParticipantUrl
+                    , Attr.class "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer border shadow-xs"
+                    , Attr.style "background" "var(--color-brand-yellow)"
+                    , Attr.style "color" "var(--color-text-primary)"
+                    , Attr.style "border-color" "var(--color-border-default)"
+                    ]
+                    [ Icon.feather "copy"
+                    , text copyButtonLabel
+                    ]
+                ]
+            ]
+        , -- Main body
+          div [ Attr.class "flex-1 flex flex-col p-4" ]
+            [ if Dict.isEmpty model.participants then
+                viewGridWaitingState model participantUrl
+
+              else
+                viewGridParticipants model
+            ]
+        , -- Toast notifications
+          case model.toast of
+            Just t ->
+                viewToast t.message
+
+            Nothing ->
+                text ""
+        ]
+
+
+viewGridWaitingState : Model -> String -> Html Msg
+viewGridWaitingState model participantUrl =
+    let
+        title =
+            case model.language of
+                Fi ->
+                    "Odotetaan osallistujia…"
+
+                En ->
+                    "Waiting for participants to open the link…"
+
+        subtitle =
+            case model.language of
+                Fi ->
+                    "Jaa alla oleva linkki osallistujille. Heidän rakennelmansa ilmestyvät tähän ruudukkoon reaaliajassa."
+
+                En ->
+                    "Share the link below with participants. Their builds will appear in this grid in real time."
+
+        copyBtnText =
+            case model.language of
+                Fi ->
+                    "Kopioi linkki"
+
+                En ->
+                    "Copy link"
+    in
+    div
+        [ Attr.attribute "data-testid" "grid-waiting-state"
+        , Attr.class "max-w-lg mx-auto my-auto w-full p-8 rounded-2xl border text-center shadow-md flex flex-col items-center gap-4"
+        , Attr.style "background" "var(--color-bg-page)"
+        , Attr.style "border-color" "var(--color-border-default)"
+        ]
+        [ div
+            [ Attr.class "w-16 h-16 rounded-full flex items-center justify-center mb-2"
+            , Attr.style "background" "var(--color-bg-subtle)"
+            , Attr.style "color" "var(--color-text-muted)"
+            ]
+            [ FeatherIcons.users
+                |> FeatherIcons.withSize 32
+                |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
+            ]
+        , h2
+            [ Attr.class "text-xl font-bold"
+            , Attr.style "color" "var(--color-text-primary)"
+            ]
+            [ text title ]
+        , p
+            [ Attr.class "text-sm max-w-sm"
+            , Attr.style "color" "var(--color-text-muted)"
+            ]
+            [ text subtitle ]
+        , div [ Attr.class "w-full flex items-center gap-2 mt-2" ]
+            [ input
+                [ Attr.type_ "text"
+                , Attr.readonly True
+                , Attr.value participantUrl
+                , Attr.class "flex-1 px-3 py-2 text-xs rounded-lg border font-mono select-all truncate"
+                , Attr.style "background" "var(--color-bg-subtle)"
+                , Attr.style "border-color" "var(--color-border-default)"
+                , Attr.style "color" "var(--color-text-primary)"
+                ]
+                []
+            , button
+                [ Attr.type_ "button"
+                , Attr.attribute "data-testid" "grid-waiting-copy-btn"
+                , onClick CopyParticipantUrl
+                , Attr.class "px-4 py-2 text-xs font-semibold rounded-lg shrink-0 border transition cursor-pointer shadow-xs"
+                , Attr.style "background" "var(--color-brand-yellow)"
+                , Attr.style "color" "var(--color-text-primary)"
+                , Attr.style "border-color" "var(--color-border-default)"
+                ]
+                [ text copyBtnText ]
+            ]
+        ]
+
+
+viewGridParticipants : Model -> Html Msg
+viewGridParticipants model =
+    let
+        sortedParticipants =
+            Dict.values model.participants
+                |> List.sortBy .name
+    in
+    div
+        [ Attr.class "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4" ]
+        (List.map (viewParticipantCard model) sortedParticipants)
+
+
+viewParticipantCard : Model -> Participant -> Html Msg
+viewParticipantCard model p =
+    let
+        isConnected =
+            p.status == "connected"
+
+        brickCountLabel =
+            case model.language of
+                Fi ->
+                    String.fromInt p.brickCount
+                        ++ (if p.brickCount == 1 then
+                                " palikka"
+
+                            else
+                                " palikkaa"
+                           )
+
+                En ->
+                    String.fromInt p.brickCount
+                        ++ (if p.brickCount == 1 then
+                                " brick"
+
+                            else
+                                " bricks"
+                           )
+
+        inspectLabel =
+            case model.language of
+                Fi ->
+                    "Tarkastele 3D"
+
+                En ->
+                    "Inspect in 3D"
+
+        statusLabel =
+            case model.language of
+                Fi ->
+                    if isConnected then
+                        "Yhdistetty"
+
+                    else
+                        "Yhteys katkennut"
+
+                En ->
+                    if isConnected then
+                        "Connected"
+
+                    else
+                        "Disconnected"
+    in
+    div
+        [ Attr.attribute "data-testid" "participant-card"
+        , Attr.class "flex flex-col rounded-xl border overflow-hidden shadow-xs transition hover:shadow-md"
+        , Attr.style "background" "var(--color-bg-page)"
+        , Attr.style "border-color" "var(--color-border-default)"
+        ]
+        [ -- 2D Thumbnail or fallback
+          div
+            [ Attr.class "w-full aspect-[4/3] flex items-center justify-center relative overflow-hidden"
+            , Attr.style "background" "var(--color-bg-subtle)"
+            ]
+            [ if String.isEmpty p.thumbnail then
+                div
+                    [ Attr.class "flex flex-col items-center justify-center gap-1.5"
+                    , Attr.style "color" "var(--color-text-muted)"
+                    ]
+                    [ Icon.featherSized 28 "box"
+                    , span [ Attr.class "text-xs" ]
+                        [ text
+                            (case model.language of
+                                Fi ->
+                                    "Ei esikatselua"
+
+                                En ->
+                                    "No preview"
+                            )
+                        ]
+                    ]
+
+              else
+                Html.img
+                    [ Attr.src p.thumbnail
+                    , Attr.alt p.name
+                    , Attr.class "w-full h-full object-contain"
+                    ]
+                    []
+            ]
+        , -- Info and inspect action
+          div [ Attr.class "p-3.5 flex flex-col gap-2.5 flex-1 justify-between" ]
+            [ div [ Attr.class "flex items-start justify-between gap-2" ]
+                [ div [ Attr.class "flex flex-col min-w-0" ]
+                    [ span
+                        [ Attr.class "font-bold text-sm truncate"
+                        , Attr.style "color" "var(--color-text-primary)"
+                        ]
+                        [ text p.name ]
+                    , span
+                        [ Attr.class "text-xs"
+                        , Attr.style "color" "var(--color-text-muted)"
+                        ]
+                        [ text brickCountLabel ]
+                    ]
+                , div
+                    [ Attr.class "flex items-center gap-1 shrink-0 pt-0.5"
+                    , Attr.title statusLabel
+                    ]
+                    [ span
+                        [ Attr.class
+                            (if isConnected then
+                                "bg-emerald-500"
+
+                             else
+                                "bg-amber-400"
+                            )
+                        , Attr.style "width" "8px"
+                        , Attr.style "height" "8px"
+                        , Attr.style "border-radius" "50%"
+                        , Attr.style "display" "inline-block"
+                        ]
+                        []
+                    , span [ Attr.class "sr-only" ] [ text statusLabel ]
+                    ]
+                ]
+            , button
+                [ Attr.type_ "button"
+                , Attr.attribute "data-testid" "inspect-participant-btn"
+                , onClick (InspectParticipant (Just p.id))
+                , Attr.class "w-full py-1.5 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center justify-center gap-1.5"
+                , Attr.style "background" "var(--color-bg-subtle)"
+                , Attr.style "color" "var(--color-text-primary)"
+                , Attr.style "border-color" "var(--color-border-default)"
+                ]
+                [ FeatherIcons.eye
+                    |> FeatherIcons.withSize 14
+                    |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
+                , text inspectLabel
+                ]
+            ]
+        ]
+
+
+viewInspectedParticipant : Model -> String -> Html Msg
+viewInspectedParticipant model participantId =
+    let
+        maybeP =
+            Dict.get participantId model.participants
+
+        participantName =
+            Maybe.map .name maybeP
+                |> Maybe.withDefault ("Rakentaja " ++ String.left 4 participantId)
+
+        brickCount =
+            Maybe.map .brickCount maybeP
+                |> Maybe.withDefault 0
+
+        isConnected =
+            Maybe.map (\p -> p.status == "connected") maybeP
+                |> Maybe.withDefault False
+
+        backLabel =
+            case model.language of
+                Fi ->
+                    "Takaisin ruudukkoon"
+
+                En ->
+                    "Back to grid"
+
+        brickCountText =
+            case model.language of
+                Fi ->
+                    String.fromInt brickCount
+                        ++ (if brickCount == 1 then
+                                " palikka"
+
+                            else
+                                " palikkaa"
+                           )
+
+                En ->
+                    String.fromInt brickCount
+                        ++ (if brickCount == 1 then
+                                " brick"
+
+                            else
+                                " bricks"
+                           )
+
+        statusText =
+            case model.language of
+                Fi ->
+                    if isConnected then
+                        "Yhdistetty"
+
+                    else
+                        "Yhteys katkennut"
+
+                En ->
+                    if isConnected then
+                        "Connected"
+
+                    else
+                        "Disconnected"
+    in
+    div
+        [ Attr.style "position" "fixed"
+        , Attr.style "inset" "0"
+        , Attr.style "overflow" "hidden"
+        , Attr.style "background" "var(--color-brand)"
+        , Attr.style "font-family" "var(--font-sans)"
+        ]
+        [ -- 3D WebGL Canvas
+          Html.map StudioMsg (viewCanvas model)
+
+        -- Top Bar
+        , header
+            [ Attr.style "position" "absolute"
+            , Attr.style "top" "0.75rem"
+            , Attr.style "left" "0.75rem"
+            , Attr.style "right" "0.75rem"
+            , Attr.style "display" "flex"
+            , Attr.style "flex-wrap" "wrap"
+            , Attr.style "align-items" "center"
+            , Attr.style "gap" "0.5rem"
+            , Attr.style "z-index" "20"
+            , Attr.style "pointer-events" "none"
+            ]
+            [ -- Back to grid button
+              button
+                [ Attr.type_ "button"
+                , Attr.attribute "data-testid" "close-inspector"
+                , onClick (InspectParticipant Nothing)
+                , Attr.class "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md transition cursor-pointer"
+                , Attr.style "background" "color-mix(in srgb, var(--color-bg-page) 92%, transparent)"
+                , Attr.style "border-color" "var(--color-border-default)"
+                , Attr.style "color" "var(--color-text-primary)"
+                , Attr.style "backdrop-filter" "blur(8px)"
+                , Attr.style "-webkit-backdrop-filter" "blur(8px)"
+                , Attr.style "pointer-events" "auto"
+                ]
+                [ FeatherIcons.arrowLeft
+                    |> FeatherIcons.withSize 14
+                    |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
+                , text backLabel
+                ]
+
+            -- Participant Info Pill
+            , div
+                [ Attr.attribute "data-testid" "inspector-participant-pill"
+                , Attr.class "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md"
+                , Attr.style "background" "color-mix(in srgb, var(--color-bg-page) 92%, transparent)"
+                , Attr.style "border-color" "var(--color-border-default)"
+                , Attr.style "color" "var(--color-text-primary)"
+                , Attr.style "backdrop-filter" "blur(8px)"
+                , Attr.style "-webkit-backdrop-filter" "blur(8px)"
+                , Attr.style "pointer-events" "auto"
+                ]
+                [ span [ Attr.class "font-bold text-sm" ] [ text participantName ]
+                , span
+                    [ Attr.class "text-xs"
+                    , Attr.style "color" "var(--color-text-muted)"
+                    ]
+                    [ text ("(" ++ brickCountText ++ ")") ]
+                , span
+                    [ Attr.class
+                        (if isConnected then
+                            "bg-emerald-500"
+
+                         else
+                            "bg-amber-400"
+                        )
+                    , Attr.style "width" "8px"
+                    , Attr.style "height" "8px"
+                    , Attr.style "border-radius" "50%"
+                    , Attr.style "display" "inline-block"
+                    ]
+                    []
+                , span
+                    [ Attr.class "text-xs"
+                    , Attr.style "color" "var(--color-text-muted)"
+                    ]
+                    [ text statusText ]
+                ]
+            ]
+
+        -- Camera Globe control for 3D orbiting/inspection
         , div
             [ Attr.style "position" "absolute"
             , Attr.style "right" "0.75rem"

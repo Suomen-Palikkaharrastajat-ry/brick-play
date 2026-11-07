@@ -84,6 +84,10 @@ const isReverseParticipant = Boolean(reverseParticipantMatch)
 const reverseRoomId = reverseParticipantMatch ? reverseParticipantMatch[1].toUpperCase() : null
 const modelHash = reverseParticipantMatch ? `#b/${reverseParticipantMatch[2]}` : null
 
+const gridMatch = initialHash.match(/^#\/grid\/([A-Za-z0-9]{4,16})/i)
+const isReverseHost = Boolean(gridMatch)
+const reverseHostRoomId = gridMatch ? gridMatch[1].toUpperCase() : null
+
 const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'https://broadcast-signaling.palikkaharrastajat.workers.dev'
 
 const runtime = initBricksRuntime({
@@ -103,7 +107,7 @@ const runtime = initBricksRuntime({
     baseUrl: window.location.origin + window.location.pathname,
   },
   initialHash,
-  syncUrlHash: !isViewer && !isReverseParticipant,
+  syncUrlHash: !isViewer && !isReverseParticipant && !isReverseHost,
   useWindowResize: true,
   dragDropTarget: window,
   suppressGestureTarget: window,
@@ -321,6 +325,31 @@ if (isViewer && viewerRoomId) {
       }, 16)
     })
   }
+} else if (isReverseHost && reverseHostRoomId) {
+  if (broadcaster) broadcaster.stop()
+  broadcaster = new Broadcaster(
+    signalingUrl,
+    {
+      roomId: reverseHostRoomId,
+      onParticipantMessage: (viewerId, msg) => {
+        runtime.app?.ports?.reverseParticipantUpdated?.send({
+          id: viewerId,
+          name: msg.name || ('Rakentaja ' + viewerId.slice(0, 4)),
+          bytes: msg.bytes || [],
+          thumbnail: msg.thumbnail || '',
+          brickCount: Number(msg.brickCount) || 0,
+          lastSeen: Date.now(),
+        })
+      },
+      onParticipantLeave: (viewerId) => {
+        runtime.app?.ports?.reverseParticipantLeft?.send(viewerId)
+      },
+      onError: (err) => runtime.app?.ports?.broadcastError?.send(err),
+    }
+  )
+  broadcaster.start().catch((err) => {
+    runtime.app?.ports?.broadcastError?.send(err?.message || 'Could not start reverse host broadcast')
+  })
 }
 
 initSnapshots(runtime.app?.ports)

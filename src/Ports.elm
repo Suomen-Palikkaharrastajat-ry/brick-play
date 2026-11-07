@@ -20,6 +20,8 @@ port module Ports exposing
     , rememberHintSeen
     , requestGeometryFlatten
     , requestThumbnails
+    , reverseParticipantLeft
+    , reverseParticipantUpdated
     , reverseStatusChanged
     , saveSnapshot
     , setUrlHash
@@ -211,3 +213,13 @@ port pushReverseSnapshot : { name : String, bytes : List Int, brickCount : Int }
 {-| Participant: Connection state ("connecting", "live", "reconnecting", "ended").
 -}
 port reverseStatusChanged : (String -> msg) -> Sub msg
+
+
+{-| Reverse Host: Participant snapshot received from participant.
+-}
+port reverseParticipantUpdated : ({ id : String, name : String, bytes : List Int, thumbnail : String, brickCount : Int, lastSeen : Int } -> msg) -> Sub msg
+
+
+{-| Reverse Host: Participant disconnected.
+-}
+port reverseParticipantLeft : (String -> msg) -> Sub msg

@@ -14,11 +14,13 @@ import Main
         ( Flags
         , Model
         , Msg(..)
+        , Participant
         , dockOverlapWidth
         , dockPlacement
         , helpRows
         , init
         , kitItemName
+        , parseReverseHostRoom
         , parseReverseParticipantRoom
         , remainingCount
         , shareHash
@@ -53,6 +55,7 @@ suite =
         , sharingAndToastTests
         , liveSharingTests
         , reverseParticipantTests
+        , reverseHostTests
         , touchTests
         , dockPlacementTests
         , test "initial inventory has 10 bricks available" <|
@@ -1089,6 +1092,236 @@ reverseParticipantTests =
                             |> Query.has [ Selector.containing [ Selector.text "Builder (1 brick)" ] ]
                     ]
                     ()
+        ]
+
+
+reverseHostTests : Test
+reverseHostTests =
+    describe "Reverse Sharing Host Grid Studio & 3D Inspector"
+        [ describe "parseReverseHostRoom"
+            [ test "parses valid roomId from #/grid/:roomId" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseHostRoom "#/grid/ROOM123")
+            , test "normalizes lowercase room ID to uppercase" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseHostRoom "#/grid/room123")
+            , test "parses hash without leading slash" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseHostRoom "grid/ROOM123")
+            , test "rejects empty room ID" <|
+                \_ ->
+                    Expect.equal Nothing (parseReverseHostRoom "#/grid/")
+            , test "rejects non-grid routes" <|
+                \_ ->
+                    Expect.all
+                        [ \_ -> Expect.equal Nothing (parseReverseHostRoom "#/watch/ROOM123")
+                        , \_ -> Expect.equal Nothing (parseReverseHostRoom "#/reverse/ROOM123/b/xyz")
+                        , \_ -> Expect.equal Nothing (parseReverseHostRoom "#model=")
+                        , \_ -> Expect.equal Nothing (parseReverseHostRoom "")
+                        ]
+                        ()
+            ]
+        , test "init decodes reverse host room and starts with empty participants" <|
+            \_ ->
+                let
+                    ( model, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+                in
+                Expect.all
+                    [ \m -> Expect.equal (Just "ROOM123") m.reverseHostRoom
+                    , \m -> Expect.equal Dict.empty m.participants
+                    , \m -> Expect.equal Nothing m.inspectedParticipant
+                    ]
+                    model
+        , test "grid view renders waiting state when participants list is empty" <|
+            \_ ->
+                let
+                    ( model, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+                in
+                Query.fromHtml (view model)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-state") ]
+                        , Query.has [ Selector.containing [ Selector.text "GRID STUDIO · ROOM123" ] ]
+                        , Query.has [ Selector.containing [ Selector.text "0 participants" ] ]
+                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-copy-btn") ]
+                        ]
+        , test "adding and updating participant via ReverseParticipantUpdated" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = "data:image/webp;base64,abc"
+                                , brickCount = 3
+                                , lastSeen = 1000
+                                }
+                            )
+                            model0
+                in
+                Expect.all
+                    [ \_ ->
+                        case Dict.get "viewer-1" model1.participants of
+                            Just p ->
+                                Expect.all
+                                    [ \part -> Expect.equal "Liisa" part.name
+                                    , \part -> Expect.equal 3 part.brickCount
+                                    , \part -> Expect.equal "connected" part.status
+                                    , \part -> Expect.equal "data:image/webp;base64,abc" part.thumbnail
+                                    ]
+                                    p
+
+                            Nothing ->
+                                Expect.fail "Participant not found"
+                    , \_ ->
+                        Query.fromHtml (view model1)
+                            |> Expect.all
+                                [ Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-state") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                                , Query.has [ Selector.containing [ Selector.text "Liisa" ] ]
+                                , Query.has [ Selector.containing [ Selector.text "3 bricks" ] ]
+                                , Query.has [ Selector.class "bg-emerald-500" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "inspect-participant-btn") ]
+                                , Query.has [ Selector.containing [ Selector.text "1 participant" ] ]
+                                ]
+                    ]
+                    ()
+        , test "handling ReverseParticipantLeft updates status to disconnected" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 3
+                                , lastSeen = 1000
+                                }
+                            )
+                            model0
+
+                    ( model2, _ ) =
+                        update (ReverseParticipantLeft "viewer-1") model1
+                in
+                Expect.all
+                    [ \_ ->
+                        case Dict.get "viewer-1" model2.participants of
+                            Just p ->
+                                Expect.equal "disconnected" p.status
+
+                            Nothing ->
+                                Expect.fail "Participant not found"
+                    , \_ ->
+                        Query.fromHtml (view model2)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Query.has [ Selector.class "bg-amber-400" ]
+                    ]
+                    ()
+        , test "switching between grid view and 3D inspector via InspectParticipant" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 2
+                                , lastSeen = 1000
+                                }
+                            )
+                            model0
+
+                    -- Inspect participant in 3D
+                    ( modelInspecting, _ ) =
+                        update (InspectParticipant (Just "viewer-1")) model1
+
+                    -- Return to grid
+                    ( modelGrid, _ ) =
+                        update (InspectParticipant Nothing) modelInspecting
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal (Just "viewer-1") modelInspecting.inspectedParticipant
+                    , \_ ->
+                        Query.fromHtml (view modelInspecting)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "close-inspector") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "inspector-participant-pill") ]
+                                , Query.has [ Selector.containing [ Selector.text "Liisa" ] ]
+                                , Query.has [ Selector.containing [ Selector.text "2 bricks" ] ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                                ]
+                    , \_ ->
+                        Expect.equal Nothing modelGrid.inspectedParticipant
+                    , \_ ->
+                        Query.fromHtml (view modelGrid)
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                    ]
+                    ()
+        , test "live document update when inspected participant sends snapshot" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 0
+                                , lastSeen = 1000
+                                }
+                            )
+                            model0
+
+                    ( modelInspecting, _ ) =
+                        update (InspectParticipant (Just "viewer-1")) model1
+
+                    ( docWithPart, _ ) =
+                        Document.addPlacement "" { part = "3001.dat", color = 4, matrix = Mat4.identity } Document.empty
+
+                    bytesWithPart =
+                        HashPayload.encodeBytes
+                            { mode = HashPayload.FreeBuilding
+                            , document = docWithPart
+                            , kit = Nothing
+                            }
+
+                    -- Participant sends updated build snapshot
+                    ( modelUpdated, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = bytesWithPart
+                                , thumbnail = ""
+                                , brickCount = 1
+                                , lastSeen = 2000
+                                }
+                            )
+                            modelInspecting
+                in
+                Expect.equal 1 (List.length (Document.placements modelUpdated.studio.document))
         ]
 
 
