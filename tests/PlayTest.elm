@@ -5,10 +5,27 @@ module PlayTest exposing (suite)
 
 import Dict
 import Expect
+import Html exposing (Html)
 import Html.Attributes as Attr
 import I18n
 import LDraw.Document as Document
-import Main exposing (Flags, Model, Msg(..), helpRows, init, kitItemName, remainingCount, shareHash, thumbnailRequests, update, view, viewToast)
+import Main
+    exposing
+        ( Flags
+        , Model
+        , Msg(..)
+        , dockOverlapWidth
+        , dockPlacement
+        , helpRows
+        , init
+        , kitItemName
+        , remainingCount
+        , shareHash
+        , thumbnailRequests
+        , update
+        , view
+        , viewToast
+        )
 import Math.Matrix4 as Mat4
 import Math.Vector3 as Vec3 exposing (vec3)
 import Set
@@ -33,6 +50,7 @@ suite =
         , shareModalTests
         , sharingAndToastTests
         , touchTests
+        , dockPlacementTests
         , test "initial inventory has 10 bricks available" <|
             \_ ->
                 let
@@ -1304,6 +1322,94 @@ touchTests =
                             , Query.has [ Selector.text "Viistot ja laatat" ]
                             , Query.has [ Selector.text "Kulmapalat ja SNOT" ]
                             , Query.has [ Selector.text "Technic" ]
+                            ]
+            ]
+        ]
+
+
+dockPlacementTests : Test
+dockPlacementTests =
+    describe "dockPlacement"
+        [ test "dockOverlapWidth constant is 1100px" <|
+            \_ ->
+                Expect.equal 1100 dockOverlapWidth
+        , describe "viewport widths < 600px (narrow portrait phone)"
+            (List.map
+                (\w ->
+                    test (String.fromInt w ++ "px pins left and right without transform") <|
+                        \_ ->
+                            Query.fromHtml (Html.div (dockPlacement w) [])
+                                |> Expect.all
+                                    [ Query.has [ Selector.style "left" "0.75rem" ]
+                                    , Query.has [ Selector.style "right" "0.75rem" ]
+                                    , Query.hasNot [ Selector.style "transform" "translateX(-50%)" ]
+                                    , Query.hasNot [ Selector.style "left" "50%" ]
+                                    ]
+                )
+                [ 375, 599 ]
+            )
+        , describe "viewport widths between 600px and 1099px (dockOverlapWidth)"
+            (List.map
+                (\w ->
+                    test (String.fromInt w ++ "px pins left with 16rem margin and no transform") <|
+                        \_ ->
+                            Query.fromHtml (Html.div (dockPlacement w) [])
+                                |> Expect.all
+                                    [ Query.has [ Selector.style "left" "0.75rem" ]
+                                    , Query.has [ Selector.style "max-width" "calc(100vw - 16rem)" ]
+                                    , Query.hasNot [ Selector.style "transform" "translateX(-50%)" ]
+                                    , Query.hasNot [ Selector.style "left" "50%" ]
+                                    ]
+                )
+                [ 600, 800, 964, 1064, 1099 ]
+            )
+        , describe "viewport widths >= 1100px (centered)"
+            (List.map
+                (\w ->
+                    test (String.fromInt w ++ "px centers dock with translateX(-50%) and 24rem margin") <|
+                        \_ ->
+                            Query.fromHtml (Html.div (dockPlacement w) [])
+                                |> Expect.all
+                                    [ Query.has [ Selector.style "left" "50%" ]
+                                    , Query.has [ Selector.style "transform" "translateX(-50%)" ]
+                                    , Query.has [ Selector.style "max-width" "calc(100vw - 24rem)" ]
+                                    ]
+                )
+                [ 1100, 1280, 1920 ]
+            )
+        , describe "view integration"
+            [ test "at 800px bottom area pins left to avoid overlapping camera globe" <|
+                \_ ->
+                    let
+                        ( baseModel, _ ) =
+                            init testFlags
+
+                        model800 =
+                            { baseModel | windowWidth = 800 }
+                    in
+                    Query.fromHtml (view model800)
+                        |> Query.find [ Selector.style "pointer-events" "none", Selector.style "bottom" "0.75rem" ]
+                        |> Expect.all
+                            [ Query.has [ Selector.style "left" "0.75rem" ]
+                            , Query.has [ Selector.style "max-width" "calc(100vw - 16rem)" ]
+                            , Query.hasNot [ Selector.style "transform" "translateX(-50%)" ]
+                            , Query.hasNot [ Selector.style "left" "50%" ]
+                            ]
+            , test "at 1280px bottom area centers horizontally" <|
+                \_ ->
+                    let
+                        ( baseModel, _ ) =
+                            init testFlags
+
+                        model1280 =
+                            { baseModel | windowWidth = 1280 }
+                    in
+                    Query.fromHtml (view model1280)
+                        |> Query.find [ Selector.style "pointer-events" "none", Selector.style "bottom" "0.75rem" ]
+                        |> Expect.all
+                            [ Query.has [ Selector.style "left" "50%" ]
+                            , Query.has [ Selector.style "transform" "translateX(-50%)" ]
+                            , Query.has [ Selector.style "max-width" "calc(100vw - 24rem)" ]
                             ]
             ]
         ]

@@ -5,6 +5,8 @@ module Main exposing
     , accomplishmentBanner
     , accomplishmentBannerIn
     , clearable
+    , dockOverlapWidth
+    , dockPlacement
     , hashFor
     , helpRows
     , init
@@ -3115,6 +3117,15 @@ dockWidth =
     "40rem"
 
 
+{-| Below this window width (CSS px), centering the palette dock causes its
+right edge to overlap the camera globe in the bottom-right corner. The dock
+pins to the left instead, reserving clear space for the camera controls.
+-}
+dockOverlapWidth : Int
+dockOverlapWidth =
+    1100
+
+
 {-| Where the bottom area sits. Centred when there is room, leaving the globe its
 corner on the right; on a narrow window it spans the width.
 -}
@@ -3123,6 +3134,11 @@ dockPlacement windowWidth =
     if windowWidth < narrowWidth then
         [ Attr.style "left" "0.75rem"
         , Attr.style "right" "0.75rem"
+        ]
+
+    else if windowWidth < dockOverlapWidth then
+        [ Attr.style "left" "0.75rem"
+        , Attr.style "max-width" "calc(100vw - 16rem)"
         ]
 
     else
