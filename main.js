@@ -4,6 +4,7 @@ import { initBricksRuntime } from './vendor/brick-studio/packages/brick-frame-vi
 import { initSnapshots } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/snapshot.js'
 import { initThumbnails } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/thumbnail-pipeline.js'
 import { encodeHash, toUint8Array } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/url-hash-codec.js'
+import { Broadcaster, Viewer } from './share.js'
 import { Elm } from './src/Main.elm'
 
 const siteRoot = new URL(import.meta.env.VITE_SITE_ROOT ?? '../', window.location.href).href
@@ -73,6 +74,12 @@ window.addEventListener(
   true,
 )
 
+const initialHash = window.location.hash ?? ''
+const watchMatch = initialHash.match(/^#\/(?:watch|live)\/([A-Za-z0-9]{4,16})/i)
+const isViewer = Boolean(watchMatch)
+const viewerRoomId = watchMatch ? watchMatch[1].toUpperCase() : null
+const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'https://signaling.palikkaharrastajat.fi'
+
 const runtime = initBricksRuntime({
   elm: Elm.Main,
   node: document.getElementById('app'),
@@ -89,8 +96,8 @@ const runtime = initBricksRuntime({
     testApiEnabled,
     baseUrl: window.location.origin + window.location.pathname,
   },
-  initialHash: window.location.hash ?? '',
-  syncUrlHash: true,
+  initialHash,
+  syncUrlHash: !isViewer,
   useWindowResize: true,
   dragDropTarget: window,
   suppressGestureTarget: window,
@@ -166,6 +173,78 @@ if (runtime.app?.ports?.downloadStudioIo) {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
+  })
+}
+
+if (runtime.app?.ports?.copyTextToClipboard) {
+  runtime.app.ports.copyTextToClipboard.subscribe((text) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {})
+    }
+  })
+}
+
+// Live sharing: WebRTC broadcaster and viewer lifecycle
+let broadcaster = null
+
+if (runtime.app?.ports?.startBroadcast) {
+  runtime.app.ports.startBroadcast.subscribe(() => {
+    if (broadcaster) broadcaster.stop()
+    broadcaster = new Broadcaster(
+      signalingUrl,
+      {
+        onViewers: (count) => runtime.app?.ports?.broadcastViewersChanged?.send(count),
+        onStatus: (status) => {
+          if (status === 'ended') {
+            runtime.app?.ports?.broadcastStopped?.send(null)
+          }
+        },
+        onError: (err) => runtime.app?.ports?.broadcastError?.send(err),
+      }
+    )
+    broadcaster.start().then(() => {
+      const watchUrl = `${window.location.origin}${window.location.pathname}#/watch/${broadcaster.roomId}`
+      runtime.app?.ports?.broadcastStarted?.send({
+        roomId: broadcaster.roomId,
+        watchUrl,
+      })
+    }).catch((err) => {
+      runtime.app?.ports?.broadcastError?.send(err?.message || 'Could not start broadcast')
+    })
+  })
+}
+
+if (runtime.app?.ports?.stopBroadcast) {
+  runtime.app.ports.stopBroadcast.subscribe(() => {
+    if (broadcaster) {
+      broadcaster.stop()
+      broadcaster = null
+      runtime.app?.ports?.broadcastStopped?.send(null)
+    }
+  })
+}
+
+if (runtime.app?.ports?.pushLiveSnapshot) {
+  runtime.app.ports.pushLiveSnapshot.subscribe((bytes) => {
+    if (broadcaster) {
+      broadcaster.push(bytes)
+    }
+  })
+}
+
+let viewer = null
+if (isViewer && viewerRoomId) {
+  viewer = new Viewer(
+    signalingUrl,
+    viewerRoomId,
+    {
+      onSnapshot: (bytes) => runtime.app?.ports?.liveSnapshotReceived?.send(bytes),
+      onStatus: (status) => runtime.app?.ports?.liveStatusChanged?.send(status),
+      onError: (err) => runtime.app?.ports?.liveError?.send(err),
+    }
+  )
+  viewer.start().catch((err) => {
+    runtime.app?.ports?.liveError?.send(err?.message || 'Could not connect to live view')
   })
 }
 

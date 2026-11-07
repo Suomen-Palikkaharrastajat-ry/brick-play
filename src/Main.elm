@@ -226,6 +226,12 @@ type alias Model =
     , testApiEnabled : Bool
     , hint : Maybe Int
     , hintCounter : Int
+    , liveBroadcasting : Bool
+    , liveRoomId : Maybe String
+    , liveWatchUrl : Maybe String
+    , liveViewerCount : Int
+    , viewerRoom : Maybe String
+    , viewerStatus : String
     }
 
 
@@ -378,11 +384,56 @@ type Msg
     | ShareEditableModel
     | SharePartsSet
     | ShareFixedModel
+    | ToggleBroadcast
+    | BroadcastStarted { roomId : String, watchUrl : String }
+    | BroadcastStopped
+    | BroadcastViewersChanged Int
+    | BroadcastError String
+    | LiveSnapshotReceived (List Int)
+    | LiveStatusChanged String
+    | LiveError String
     | DismissToast Int
     | MenuPicked Msg
     | NoOp
     | WindowResized Int Int
     | ThumbnailLoaded { file : String, color : Int, url : String, title : String }
+
+
+{-| Parse room ID from #/watch/:roomId or #/live/:roomId
+-}
+parseViewerRoom : String -> Maybe String
+parseViewerRoom hash =
+    let
+        clean =
+            String.replace "#" "" hash
+                |> String.trim
+    in
+    if String.startsWith "/watch/" clean then
+        case String.split "/" clean of
+            _ :: _ :: roomId :: _ ->
+                if String.isEmpty roomId then
+                    Nothing
+
+                else
+                    Just (String.toUpper roomId)
+
+            _ ->
+                Nothing
+
+    else if String.startsWith "/live/" clean then
+        case String.split "/" clean of
+            _ :: _ :: roomId :: _ ->
+                if String.isEmpty roomId then
+                    Nothing
+
+                else
+                    Just (String.toUpper roomId)
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
 
 
 {-| Initialize the Brick Play application.
@@ -439,8 +490,14 @@ init flags =
                     in
                     ( doc, isFree, inv )
 
+        vRoom =
+            parseViewerRoom flags.initialHash
+
+        isViewerMode =
+            vRoom /= Nothing
+
         initialDoc =
-            if not free && List.isEmpty inventory then
+            if isViewerMode || (not free && List.isEmpty inventory) then
                 List.foldl (\placement acc -> Document.setGlued True placement.id acc) rawDoc (Document.placements rawDoc)
 
             else
@@ -469,8 +526,8 @@ init flags =
                         >> Core.setDragMode (Core.DragPartsOrPan Core.OneFingerPans)
                         >> Core.setTwoFingerOrbits True
                         -- Glue locks parts in a puzzle; free building may glue and unglue.
-                        >> Core.setGlueEditable free
-                        >> Core.setPasteEnabled (free || not (List.isEmpty inventory))
+                        >> Core.setGlueEditable (free && not isViewerMode)
+                        >> Core.setPasteEnabled ((free || not (List.isEmpty inventory)) && not isViewerMode)
                         >> Step.apply Step.Stud
                     )
 
@@ -518,6 +575,17 @@ init flags =
             , testApiEnabled = flags.testApiEnabled
             , hint = Nothing
             , hintCounter = 0
+            , liveBroadcasting = False
+            , liveRoomId = Nothing
+            , liveWatchUrl = Nothing
+            , liveViewerCount = 0
+            , viewerRoom = parseViewerRoom flags.initialHash
+            , viewerStatus =
+                if parseViewerRoom flags.initialHash /= Nothing then
+                    "connecting"
+
+                else
+                    ""
             }
 
         fetchViewportSize =
@@ -1028,10 +1096,22 @@ updateApp msg model =
                 Nothing ->
                     Cmd.none
 
+        liveCmd =
+            if settled.liveBroadcasting then
+                case hashFor model settled of
+                    Just hash ->
+                        Ports.pushLiveSnapshot hash
+
+                    Nothing ->
+                        Cmd.none
+
+            else
+                Cmd.none
+
         ( hinted, hintCmd ) =
             withHint settled
     in
-    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, hintCmd ] )
+    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, liveCmd, hintCmd ] )
 
 
 {-| Handle the opt-in dev browser bridge. `dragLDraw` projects world-space
@@ -1530,21 +1610,32 @@ step msg model =
             ( model, Cmd.none )
 
         StudioMsg studioMsg ->
-            let
-                ( nextStudio, studioCmd, events ) =
-                    Core.update studioMsg model.studio
-
-                portCmds =
-                    handleCoreEvents events
-
-                nextModel =
-                    { model | studio = nextStudio }
-            in
-            List.foldl applyEvent
-                ( nextModel
-                , Cmd.batch [ Cmd.map StudioMsg studioCmd, portCmds ]
+            if model.viewerRoom /= Nothing then
+                let
+                    ( nextStudio, studioCmd, _ ) =
+                        Core.update studioMsg model.studio
+                in
+                -- In viewer mode, keep document locked to what the broadcaster sent
+                ( { model | studio = { nextStudio | document = model.studio.document } }
+                , Cmd.map StudioMsg studioCmd
                 )
-                events
+
+            else
+                let
+                    ( nextStudio, studioCmd, events ) =
+                        Core.update studioMsg model.studio
+
+                    portCmds =
+                        handleCoreEvents events
+
+                    nextModel =
+                        { model | studio = nextStudio }
+                in
+                List.foldl applyEvent
+                    ( nextModel
+                    , Cmd.batch [ Cmd.map StudioMsg studioCmd, portCmds ]
+                    )
+                    events
 
         TogglePlay ->
             -- Outside Technic mode there is no machine, so Space is unbound.
@@ -1941,16 +2032,30 @@ step msg model =
         CopyShareUrl ->
             case model.shareModal of
                 Just sm ->
-                    let
-                        payload =
-                            ShareModal.payloadFor sm.selected model.free model.studio.document model.inventory
-                    in
-                    ( { model | shareModal = Just { sm | copied = True } }
-                    , Cmd.batch
-                        [ Ports.copyToClipboard payload
-                        , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
-                        ]
-                    )
+                    case sm.selected of
+                        ShareModal.LivePreview ->
+                            let
+                                url =
+                                    ShareModal.computeUrlWithLive model.baseUrl sm.selected model.free model.studio.document model.inventory model.liveWatchUrl
+                            in
+                            ( { model | shareModal = Just { sm | copied = True } }
+                            , Cmd.batch
+                                [ Ports.copyTextToClipboard url
+                                , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
+                                ]
+                            )
+
+                        _ ->
+                            let
+                                payload =
+                                    ShareModal.payloadFor sm.selected model.free model.studio.document model.inventory
+                            in
+                            ( { model | shareModal = Just { sm | copied = True } }
+                            , Cmd.batch
+                                [ Ports.copyToClipboard payload
+                                , Process.sleep 2500 |> Task.perform (\_ -> DismissShareCopied)
+                                ]
+                            )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -1983,6 +2088,68 @@ step msg model =
 
             else
                 ( model, Cmd.none )
+
+        ToggleBroadcast ->
+            if model.liveBroadcasting then
+                ( { model | liveBroadcasting = False, liveRoomId = Nothing, liveWatchUrl = Nothing, liveViewerCount = 0 }
+                , Ports.stopBroadcast ()
+                )
+
+            else
+                ( model, Ports.startBroadcast () )
+
+        BroadcastStarted { roomId, watchUrl } ->
+            let
+                snapshotBytes =
+                    liveHash model
+            in
+            ( { model
+                | liveBroadcasting = True
+                , liveRoomId = Just roomId
+                , liveWatchUrl = Just watchUrl
+              }
+            , Ports.pushLiveSnapshot snapshotBytes
+            )
+
+        BroadcastStopped ->
+            ( { model | liveBroadcasting = False, liveRoomId = Nothing, liveWatchUrl = Nothing, liveViewerCount = 0 }
+            , Cmd.none
+            )
+
+        BroadcastViewersChanged count ->
+            ( { model | liveViewerCount = count }, Cmd.none )
+
+        BroadcastError err ->
+            ( withToast err model, Cmd.none )
+
+        LiveSnapshotReceived bytes ->
+            case HashPayload.decodeBytes bytes of
+                Just payload ->
+                    let
+                        doc =
+                            if model.viewerRoom /= Nothing then
+                                List.foldl (\p acc -> Document.setGlued True p.id acc)
+                                    payload.document
+                                    (Document.placements payload.document)
+
+                            else
+                                payload.document
+
+                        updatedStudio =
+                            Core.resetDocument doc model.studio
+                                |> Core.setGlueEditable False
+                                |> Core.clearSelection
+                    in
+                    ( { model | studio = updatedStudio }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        LiveStatusChanged status ->
+            ( { model | viewerStatus = status }, Cmd.none )
+
+        LiveError err ->
+            ( withToast err model, Cmd.none )
 
         DismissToast id ->
             if Maybe.map .id model.toast == Just id then
@@ -2285,16 +2452,20 @@ syncKeyPause model =
 -}
 runCore : (Core.Model -> ( Core.Model, Cmd Core.Msg, List Core.Event )) -> Model -> ( Model, Cmd Msg )
 runCore edit model =
-    let
-        ( nextStudio, studioCmd, events ) =
-            edit model.studio
+    if model.viewerRoom /= Nothing then
+        ( model, Cmd.none )
 
-        nextModel =
-            { model | studio = nextStudio }
-    in
-    ( nextModel
-    , Cmd.batch [ Cmd.map StudioMsg studioCmd, handleCoreEvents events ]
-    )
+    else
+        let
+            ( nextStudio, studioCmd, events ) =
+                edit model.studio
+
+            nextModel =
+                { model | studio = nextStudio }
+        in
+        ( nextModel
+        , Cmd.batch [ Cmd.map StudioMsg studioCmd, handleCoreEvents events ]
+        )
 
 
 {-| Act on one studio event: a key the studio did not take becomes a shortcut,
@@ -2485,6 +2656,13 @@ subscriptions model =
         , Ports.snapshotProgress SnapshotProgress
         , Ports.snapshotFailed SnapshotFailed
         , Ports.testCommand TestCommand
+        , Ports.broadcastStarted BroadcastStarted
+        , Ports.broadcastStopped (\_ -> BroadcastStopped)
+        , Ports.broadcastViewersChanged BroadcastViewersChanged
+        , Ports.broadcastError BroadcastError
+        , Ports.liveSnapshotReceived LiveSnapshotReceived
+        , Ports.liveStatusChanged LiveStatusChanged
+        , Ports.liveError LiveError
         , if model.playing then
             Browser.Events.onAnimationFrameDelta Tick
 
@@ -2497,13 +2675,157 @@ subscriptions model =
 -}
 view : Model -> Html Msg
 view model =
-    let
-        accomplished =
-            technicMode model && Machine.isAccomplished model.machine
+    case model.viewerRoom of
+        Just roomId ->
+            viewChromelessViewer model roomId
 
-        gearCount =
-            List.length model.machine.gears
-    in
+        Nothing ->
+            let
+                accomplished =
+                    technicMode model && Machine.isAccomplished model.machine
+
+                gearCount =
+                    List.length model.machine.gears
+            in
+            div
+                [ Attr.style "position" "fixed"
+                , Attr.style "inset" "0"
+                , Attr.style "overflow" "hidden"
+                , Attr.style "background" "var(--color-brand)"
+                , Attr.style "font-family" "var(--font-sans)"
+                ]
+                [ -- Top-left toolbar and status bar: the menu, help and play buttons sit at
+                  -- the top left, and temporary info pills (Bit drag, Tidy up, gear mesh
+                  -- status, first-select hint, touch part name, and accomplishment banner)
+                  -- grow horizontally beside them, keeping the vertical space above the
+                  -- brick palette free.
+                  header
+                    [ Attr.style "position" "absolute"
+                    , Attr.style "top" "0.75rem"
+                    , Attr.style "left" "0.75rem"
+                    , Attr.style "right" "0.75rem"
+                    , Attr.style "display" "flex"
+                    , Attr.style "flex-wrap" "wrap"
+                    , Attr.style "align-items" "center"
+                    , Attr.style "gap" "0.5rem"
+                    , Attr.style "z-index" "20"
+                    , Attr.style "pointer-events" "none"
+                    , keepFocusOnCanvas
+                    ]
+                    [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
+                    , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
+                    , shareButton model.language
+                    , helpButton model.language
+                    , if model.liveBroadcasting then
+                        livePill model
+
+                      else
+                        text ""
+                    , if technicMode model then
+                        playButton model.language model.playing
+
+                      else
+                        text ""
+                    , bitDragRow model
+                    , tidyRow model
+                    , if technicMode model then
+                        gearRow model
+
+                      else
+                        text ""
+                    , hintRow model
+                    , touchLabel model
+                    , if accomplished then
+                        accomplishmentBannerIn model.language gearCount
+
+                      else
+                        text ""
+                    ]
+
+                -- 3D WebGL Canvas
+                , Html.map StudioMsg (viewCanvas model)
+
+                -- The context ring beside the selected part, over the canvas
+                , ringView model
+
+                -- Camera control: on a wide window the camera globe sits bottom-right,
+                -- beside the dock. On a narrow window it shares the bottom row instead.
+                , if isNarrow model then
+                    text ""
+
+                  else
+                    div
+                        [ Attr.style "position" "absolute"
+                        , Attr.style "right" "0.75rem"
+                        , Attr.style "bottom" "0.75rem"
+                        , Attr.style "z-index" "10"
+                        ]
+                        [ globeControl model ]
+                , if model.helpOpen then
+                    -- Above the header and bottom area (z-index 10 and 20), which would
+                    -- otherwise cover the top and bottom of the dialog.
+                    div
+                        [ Attr.style "position" "absolute"
+                        , Attr.style "top" "0"
+                        , Attr.style "left" "0"
+                        , Attr.style "right" "0"
+                        , Attr.style "bottom" "0"
+                        , Attr.style "z-index" "30"
+                        , Attr.style "pointer-events" "none"
+                        ]
+                        [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
+
+                  else
+                    text ""
+
+                -- Bottom: the brick palette / kit dock (or narrow row with camera toggle)
+                , bottomArea model
+                , case model.toast of
+                    Just t ->
+                        viewToast t.message
+
+                    Nothing ->
+                        text ""
+                , case model.snapshotModal of
+                    Just modal ->
+                        SnapshotModal.viewWithLanguage model.language
+                            { onSave = SnapshotSave
+                            , onClose = SnapshotClose
+                            }
+                            modal
+
+                    Nothing ->
+                        text ""
+                , case model.shareModal of
+                    Just sm ->
+                        ShareModal.viewWithLanguage model.language
+                            { language = model.language
+                            , baseUrl = model.baseUrl
+                            , free = model.free
+                            , document = model.studio.document
+                            , inventory = model.inventory
+                            , liveBroadcasting = model.liveBroadcasting
+                            , liveWatchUrl = model.liveWatchUrl
+                            , liveViewerCount = model.liveViewerCount
+                            , onToggleBroadcast = ToggleBroadcast
+                            , onClose = CloseShareModal
+                            , onSelectKind = SelectShareKind
+                            , onCopyUrl = CopyShareUrl
+                            }
+                            sm
+
+                    Nothing ->
+                        text ""
+                , if model.tidyOpen then
+                    tidyPanel model
+
+                  else
+                    text ""
+                ]
+
+
+viewChromelessViewer : Model -> String -> Html Msg
+viewChromelessViewer model roomId =
     div
         [ Attr.style "position" "fixed"
         , Attr.style "inset" "0"
@@ -2511,124 +2833,130 @@ view model =
         , Attr.style "background" "var(--color-brand)"
         , Attr.style "font-family" "var(--font-sans)"
         ]
-        [ -- Top-left toolbar and status bar: the menu, help and play buttons sit at
-          -- the top left, and temporary info pills (Bit drag, Tidy up, gear mesh
-          -- status, first-select hint, touch part name, and accomplishment banner)
-          -- grow horizontally beside them, keeping the vertical space above the
-          -- brick palette free.
-          header
-            [ Attr.style "position" "absolute"
-            , Attr.style "top" "0.75rem"
-            , Attr.style "left" "0.75rem"
-            , Attr.style "right" "0.75rem"
+        [ -- 3D WebGL Canvas
+          Html.map StudioMsg (viewCanvas model)
+
+        -- Top-left Live status badge
+        , div
+            [ Attr.attribute "data-testid" "viewer-live-badge"
+            , Attr.style "position" "absolute"
+            , Attr.style "top" "1rem"
+            , Attr.style "left" "1rem"
+            , Attr.style "z-index" "20"
             , Attr.style "display" "flex"
-            , Attr.style "flex-wrap" "wrap"
             , Attr.style "align-items" "center"
             , Attr.style "gap" "0.5rem"
-            , Attr.style "z-index" "20"
+            , Attr.style "padding" "6px 14px"
+            , Attr.style "border-radius" "9999px"
+            , Attr.style "background" "rgba(0, 0, 0, 0.75)"
+            , Attr.style "backdrop-filter" "blur(8px)"
+            , Attr.style "-webkit-backdrop-filter" "blur(8px)"
+            , Attr.style "color" "#ffffff"
+            , Attr.style "font-size" "13px"
+            , Attr.style "font-weight" "600"
             , Attr.style "pointer-events" "none"
-            , keepFocusOnCanvas
+            , Attr.style "box-shadow" "0 4px 12px rgba(0, 0, 0, 0.3)"
             ]
-            [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
-            , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
-            , shareButton model.language
-            , helpButton model.language
-            , if technicMode model then
-                playButton model.language model.playing
+            [ div
+                [ Attr.style "width" "8px"
+                , Attr.style "height" "8px"
+                , Attr.style "border-radius" "50%"
+                , Attr.style "background"
+                    (if model.viewerStatus == "live" then
+                        "#ef4444"
 
-              else
-                text ""
-            , bitDragRow model
-            , tidyRow model
-            , if technicMode model then
-                gearRow model
+                     else
+                        "#eab308"
+                    )
+                ]
+                []
+            , text
+                (if model.viewerStatus == "live" then
+                    "LIVE · " ++ roomId
 
-              else
-                text ""
-            , hintRow model
-            , touchLabel model
-            , if accomplished then
-                accomplishmentBannerIn model.language gearCount
+                 else if model.viewerStatus == "ended" then
+                    case model.language of
+                        Fi ->
+                            "Lähetys päättyi"
 
-              else
-                text ""
+                        En ->
+                            "Broadcast ended"
+
+                 else
+                    case model.language of
+                        Fi ->
+                            "Yhdistetään…"
+
+                        En ->
+                            "Connecting…"
+                )
             ]
 
-        -- 3D WebGL Canvas
-        , Html.map StudioMsg (viewCanvas model)
+        -- Camera Globe control for 3D inspection
+        , div
+            [ Attr.style "position" "absolute"
+            , Attr.style "right" "0.75rem"
+            , Attr.style "bottom" "0.75rem"
+            , Attr.style "z-index" "10"
+            ]
+            [ globeControl model ]
 
-        -- The context ring beside the selected part, over the canvas
-        , ringView model
-
-        -- Camera control: on a wide window the camera globe sits bottom-right,
-        -- beside the dock. On a narrow window it shares the bottom row instead.
-        , if isNarrow model then
-            text ""
-
-          else
-            div
-                [ Attr.style "position" "absolute"
-                , Attr.style "right" "0.75rem"
-                , Attr.style "bottom" "0.75rem"
-                , Attr.style "z-index" "10"
-                ]
-                [ globeControl model ]
-        , if model.helpOpen then
-            -- Above the header and bottom area (z-index 10 and 20), which would
-            -- otherwise cover the top and bottom of the dialog.
-            div
-                [ Attr.style "position" "absolute"
-                , Attr.style "top" "0"
-                , Attr.style "left" "0"
-                , Attr.style "right" "0"
-                , Attr.style "bottom" "0"
-                , Attr.style "z-index" "30"
-                , Attr.style "pointer-events" "none"
-                ]
-                [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
-
-          else
-            text ""
-
-        -- Bottom: the brick palette / kit dock (or narrow row with camera toggle)
-        , bottomArea model
+        -- Toast messages (if any)
         , case model.toast of
             Just t ->
                 viewToast t.message
 
             Nothing ->
                 text ""
-        , case model.snapshotModal of
-            Just modal ->
-                SnapshotModal.viewWithLanguage model.language
-                    { onSave = SnapshotSave
-                    , onClose = SnapshotClose
-                    }
-                    modal
+        ]
 
-            Nothing ->
-                text ""
-        , case model.shareModal of
-            Just sm ->
-                ShareModal.viewWithLanguage model.language
-                    { language = model.language
-                    , baseUrl = model.baseUrl
-                    , free = model.free
-                    , document = model.studio.document
-                    , inventory = model.inventory
-                    , onClose = CloseShareModal
-                    , onSelectKind = SelectShareKind
-                    , onCopyUrl = CopyShareUrl
-                    }
-                    sm
 
-            Nothing ->
-                text ""
-        , if model.tidyOpen then
-            tidyPanel model
+livePill : Model -> Html Msg
+livePill model =
+    button
+        [ Attr.type_ "button"
+        , Attr.attribute "data-testid" "header-live-pill"
+        , Attr.attribute "aria-label" "Live Crafting Broadcast"
+        , Html.Events.onClick OpenShareModal
+        , Attr.style "display" "inline-flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "gap" "6px"
+        , Attr.style "padding" "4px 10px"
+        , Attr.style "border-radius" "9999px"
+        , Attr.style "background" "rgba(239, 68, 68, 0.95)"
+        , Attr.style "color" "#ffffff"
+        , Attr.style "font-size" "12px"
+        , Attr.style "font-weight" "700"
+        , Attr.style "letter-spacing" "0.02em"
+        , Attr.style "border" "none"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "box-shadow" "0 2px 8px rgba(239, 68, 68, 0.4)"
+        , Attr.style "pointer-events" "auto"
+        ]
+        [ div
+            [ Attr.style "width" "6px"
+            , Attr.style "height" "6px"
+            , Attr.style "border-radius" "50%"
+            , Attr.style "background" "#ffffff"
+            ]
+            []
+        , text
+            ("LIVE · "
+                ++ String.fromInt model.liveViewerCount
+                ++ (if model.language == Fi then
+                        if model.liveViewerCount == 1 then
+                            " katsoja"
 
-          else
-            text ""
+                        else
+                            " katsojaa"
+
+                    else if model.liveViewerCount == 1 then
+                        " viewer"
+
+                    else
+                        " viewers"
+                   )
+            )
         ]
 
 

@@ -5,6 +5,7 @@ module ShareModal exposing
     , availableKinds
     , computeHash
     , computeUrl
+    , computeUrlWithLive
     , defaultKind
     , hasPlacedUnglued
     , init
@@ -43,13 +44,14 @@ import UI.Icon as Icon
 import UI.Theme as Theme
 
 
-{-| The four share modes supported across Brick Play.
+{-| The share modes supported across Brick Play.
 -}
 type ShareKind
     = FreeBuilding
     | PartsSet
     | PartialSet
     | FixedModel
+    | LivePreview
 
 
 {-| State of the share modal.
@@ -68,6 +70,10 @@ type alias Config msg =
     , free : Bool
     , document : Document
     , inventory : List KitItem
+    , liveBroadcasting : Bool
+    , liveWatchUrl : Maybe String
+    , liveViewerCount : Int
+    , onToggleBroadcast : msg
     , onClose : msg
     , onSelectKind : ShareKind -> msg
     , onCopyUrl : msg
@@ -109,18 +115,22 @@ hasPlacedUnglued doc =
 -}
 availableKinds : { free : Bool, hasInventory : Bool, hasPlacedUnglued : Bool } -> List ShareKind
 availableKinds config =
-    if config.free then
-        [ FreeBuilding, PartsSet, FixedModel ]
+    let
+        baseKinds =
+            if config.free then
+                [ FreeBuilding, PartsSet, FixedModel ]
 
-    else if config.hasInventory then
-        if config.hasPlacedUnglued then
-            [ PartsSet, PartialSet, FixedModel ]
+            else if config.hasInventory then
+                if config.hasPlacedUnglued then
+                    [ PartsSet, PartialSet, FixedModel ]
 
-        else
-            [ PartsSet, FixedModel ]
+                else
+                    [ PartsSet, FixedModel ]
 
-    else
-        [ FixedModel ]
+            else
+                [ FixedModel ]
+    in
+    baseKinds ++ [ LivePreview ]
 
 
 {-| Convert a share kind to a string for data-testid attributes.
@@ -139,6 +149,9 @@ kindToTestId kind =
 
         FixedModel ->
             "fixed"
+
+        LivePreview ->
+            "live"
 
 
 {-| Compute the wire-format byte list for a share kind.
@@ -161,6 +174,9 @@ payloadFor kind free doc inventory =
 
         FixedModel ->
             Link.fixedModelHash doc
+
+        LivePreview ->
+            Link.freeHash doc
 
 
 {-| Compute the pure high-density hash string (`#b/...`) for a share kind.
@@ -190,19 +206,45 @@ computeHash kind free doc inventory =
 -}
 computeUrl : String -> ShareKind -> Bool -> Document -> List KitItem -> String
 computeUrl baseUrl kind free doc inventory =
-    let
-        cleanBase =
-            case String.split "#" baseUrl of
-                first :: _ ->
-                    first
+    computeUrlWithLive baseUrl kind free doc inventory Nothing
 
-                [] ->
-                    baseUrl
 
-        hash =
-            computeHash kind free doc inventory
-    in
-    cleanBase ++ hash
+{-| Compute the full URL for a share kind, supporting live broadcast watch URLs.
+-}
+computeUrlWithLive : String -> ShareKind -> Bool -> Document -> List KitItem -> Maybe String -> String
+computeUrlWithLive baseUrl kind free doc inventory liveWatchUrl =
+    case kind of
+        LivePreview ->
+            case liveWatchUrl of
+                Just url ->
+                    url
+
+                Nothing ->
+                    let
+                        cleanBase =
+                            case String.split "#" baseUrl of
+                                first :: _ ->
+                                    first
+
+                                [] ->
+                                    baseUrl
+                    in
+                    cleanBase ++ "#/watch/connecting"
+
+        _ ->
+            let
+                cleanBase =
+                    case String.split "#" baseUrl of
+                        first :: _ ->
+                            first
+
+                        [] ->
+                            baseUrl
+
+                hash =
+                    computeHash kind free doc inventory
+            in
+            cleanBase ++ hash
 
 
 kindLabels : Language -> ShareKind -> ( String, String )
@@ -219,6 +261,29 @@ kindLabels lang kind =
 
         FixedModel ->
             ( I18n.shareOptionFixedModel lang, I18n.shareOptionFixedModelDesc lang )
+
+        LivePreview ->
+            ( shareOptionLivePreview lang, shareOptionLivePreviewDesc lang )
+
+
+shareOptionLivePreview : Language -> String
+shareOptionLivePreview lang =
+    case lang of
+        Fi ->
+            "Suora lähetys"
+
+        En ->
+            "Live Crafting"
+
+
+shareOptionLivePreviewDesc : Language -> String
+shareOptionLivePreviewDesc lang =
+    case lang of
+        Fi ->
+            "Jaa linkki, josta muut näkevät rakentamisesi reaaliajassa"
+
+        En ->
+            "Share a readonly link to let others watch you build in real time"
 
 
 {-| Render the responsive share modal.
@@ -244,7 +309,7 @@ viewWithLanguage lang config model =
                 }
 
         fullUrl =
-            computeUrl config.baseUrl model.selected config.free config.document config.inventory
+            computeUrlWithLive config.baseUrl model.selected config.free config.document config.inventory config.liveWatchUrl
     in
     div
         [ Attr.attribute "role" "dialog"
@@ -338,12 +403,159 @@ viewWithLanguage lang config model =
                     , Attr.style "gap" "8px"
                     ]
                     (List.map (viewRadioCard lang model.selected config.onSelectKind) kinds)
-                , -- QR Code with white quiet zone padding
-                  viewQrCode lang fullUrl
-                , -- Copy Link Action Button
-                  viewCopyButton lang model.copied config.onCopyUrl
+                , if model.selected == LivePreview then
+                    if config.liveBroadcasting then
+                        div
+                            [ Attr.style "display" "flex"
+                            , Attr.style "flex-direction" "column"
+                            , Attr.style "gap" "12px"
+                            ]
+                            [ viewLiveBadge lang config.liveViewerCount
+                            , viewQrCode lang fullUrl
+                            , viewCopyButton lang model.copied config.onCopyUrl
+                            , viewBroadcastButton lang True config.onToggleBroadcast
+                            ]
+
+                    else
+                        div
+                            [ Attr.style "display" "flex"
+                            , Attr.style "flex-direction" "column"
+                            , Attr.style "gap" "12px"
+                            , Attr.style "padding" "6px 0"
+                            ]
+                            [ viewBroadcastButton lang False config.onToggleBroadcast ]
+
+                  else
+                    div
+                        [ Attr.style "display" "flex"
+                        , Attr.style "flex-direction" "column"
+                        , Attr.style "gap" "12px"
+                        ]
+                        [ viewQrCode lang fullUrl
+                        , viewCopyButton lang model.copied config.onCopyUrl
+                        ]
                 ]
             ]
+        ]
+
+
+viewLiveBadge : Language -> Int -> Html msg
+viewLiveBadge lang count =
+    div
+        [ Attr.attribute "data-testid" "live-broadcast-badge"
+        , Attr.style "display" "flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "gap" "6px"
+        , Attr.style "padding" "6px 12px"
+        , Attr.style "border-radius" "6px"
+        , Attr.style "background" "rgba(239, 68, 68, 0.15)"
+        , Attr.style "border" "1px solid rgba(239, 68, 68, 0.3)"
+        , Attr.style "color" "#ef4444"
+        , Attr.style "font-size" "12px"
+        , Attr.style "font-weight" "600"
+        ]
+        [ div
+            [ Attr.style "width" "6px"
+            , Attr.style "height" "6px"
+            , Attr.style "border-radius" "50%"
+            , Attr.style "background" "#ef4444"
+            ]
+            []
+        , text
+            (case lang of
+                Fi ->
+                    "LIVE · "
+                        ++ String.fromInt count
+                        ++ (if count == 1 then
+                                " katsoja"
+
+                            else
+                                " katsojaa"
+                           )
+
+                En ->
+                    "LIVE · "
+                        ++ String.fromInt count
+                        ++ (if count == 1 then
+                                " viewer"
+
+                            else
+                                " viewers"
+                           )
+            )
+        ]
+
+
+viewBroadcastButton : Language -> Bool -> msg -> Html msg
+viewBroadcastButton lang isBroadcasting onToggle =
+    button
+        [ Attr.type_ "button"
+        , Attr.attribute "data-testid"
+            (if isBroadcasting then
+                "stop-broadcast-button"
+
+             else
+                "start-broadcast-button"
+            )
+        , Html.Events.onClick onToggle
+        , Attr.style "min-height" "44px"
+        , Attr.style "width" "100%"
+        , Attr.style "display" "inline-flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "gap" "8px"
+        , Attr.style "padding" "10px 16px"
+        , Attr.style "border-radius" "8px"
+        , Attr.style "font-weight" "600"
+        , Attr.style "font-size" "13px"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "border"
+            (if isBroadcasting then
+                "1px solid #dc2626"
+
+             else
+                "1px solid " ++ Theme.borderDefault
+            )
+        , Attr.style "background"
+            (if isBroadcasting then
+                "#dc2626"
+
+             else
+                Theme.brandYellow
+            )
+        , Attr.style "color"
+            (if isBroadcasting then
+                "#ffffff"
+
+             else
+                Theme.brand
+            )
+        ]
+        [ Icon.feather
+            (if isBroadcasting then
+                "square"
+
+             else
+                "radio"
+            )
+        , text
+            (if isBroadcasting then
+                case lang of
+                    Fi ->
+                        "Lopeta suora lähetys"
+
+                    En ->
+                        "Stop Live Crafting"
+
+             else
+                case lang of
+                    Fi ->
+                        "Aloita suora lähetys"
+
+                    En ->
+                        "Start Live Crafting"
+            )
         ]
 
 

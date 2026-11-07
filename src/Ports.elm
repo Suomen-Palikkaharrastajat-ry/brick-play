@@ -1,10 +1,19 @@
 port module Ports exposing
-    ( cancelSnapshot
+    ( broadcastError
+    , broadcastStarted
+    , broadcastStopped
+    , broadcastViewersChanged
+    , cancelSnapshot
     , captureRender
+    , copyTextToClipboard
     , copyToClipboard
     , downloadStudioIo
     , geometryFlattenFailed
     , geometryFlattened
+    , liveError
+    , liveSnapshotReceived
+    , liveStatusChanged
+    , pushLiveSnapshot
     , rememberHintSeen
     , requestGeometryFlatten
     , requestThumbnails
@@ -13,6 +22,8 @@ port module Ports exposing
     , snapshotFailed
     , snapshotProgress
     , snapshotReady
+    , startBroadcast
+    , stopBroadcast
     , storeLanguage
     , testCommand
     , testReply
@@ -63,6 +74,11 @@ port setUrlHash : List Int -> Cmd msg
 {-| Copy binary link payload to the system clipboard (compressed as #b/<base64url> by JS).
 -}
 port copyToClipboard : List Int -> Cmd msg
+
+
+{-| Copy plain text (such as a full live watch URL) to the system clipboard.
+-}
+port copyTextToClipboard : String -> Cmd msg
 
 
 {-| Ask the offline path tracer for a 1920 × 1080 render. The value is the
@@ -121,3 +137,53 @@ port rememberHintSeen : () -> Cmd msg
 {-| Persist chosen language ("fi" or "en") to local storage.
 -}
 port storeLanguage : String -> Cmd msg
+
+
+{-| Broadcaster: Ask JS to initialize WebRTC broadcaster and connect to signaling.
+-}
+port startBroadcast : () -> Cmd msg
+
+
+{-| Broadcaster: Terminate broadcast session and disconnect all peers.
+-}
+port stopBroadcast : () -> Cmd msg
+
+
+{-| Broadcaster: Send updated HashPayload byte list to all connected viewers.
+-}
+port pushLiveSnapshot : List Int -> Cmd msg
+
+
+{-| Broadcaster: Received from JS when room is established.
+-}
+port broadcastStarted : ({ roomId : String, watchUrl : String } -> msg) -> Sub msg
+
+
+{-| Broadcaster: Received when broadcast stops.
+-}
+port broadcastStopped : (() -> msg) -> Sub msg
+
+
+{-| Broadcaster: Number of active viewers connected.
+-}
+port broadcastViewersChanged : (Int -> msg) -> Sub msg
+
+
+{-| Broadcaster: Signaling or WebRTC error.
+-}
+port broadcastError : (String -> msg) -> Sub msg
+
+
+{-| Viewer: Received full HashPayload binary update from broadcaster.
+-}
+port liveSnapshotReceived : (List Int -> msg) -> Sub msg
+
+
+{-| Viewer: Connection state ("connecting", "live", "reconnecting", "ended").
+-}
+port liveStatusChanged : (String -> msg) -> Sub msg
+
+
+{-| Viewer: Error message from connection failure.
+-}
+port liveError : (String -> msg) -> Sub msg
