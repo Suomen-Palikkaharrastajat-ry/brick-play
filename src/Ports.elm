@@ -16,9 +16,11 @@ port module Ports exposing
     , liveStatusChanged
     , pushLiveAnimation
     , pushLiveSnapshot
+    , pushReverseSnapshot
     , rememberHintSeen
     , requestGeometryFlatten
     , requestThumbnails
+    , reverseStatusChanged
     , saveSnapshot
     , setUrlHash
     , snapshotFailed
@@ -199,3 +201,13 @@ port liveStatusChanged : (String -> msg) -> Sub msg
 {-| Viewer: Error message from connection failure.
 -}
 port liveError : (String -> msg) -> Sub msg
+
+
+{-| Participant: Send snapshot update to host in reverse sharing.
+-}
+port pushReverseSnapshot : { name : String, bytes : List Int, brickCount : Int } -> Cmd msg
+
+
+{-| Participant: Connection state ("connecting", "live", "reconnecting", "ended").
+-}
+port reverseStatusChanged : (String -> msg) -> Sub msg

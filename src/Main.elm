@@ -12,6 +12,7 @@ module Main exposing
     , init
     , kitItemName
     , main
+    , parseReverseParticipantRoom
     , remainingCount
     , remainingForItem
     , shareHash
@@ -91,6 +92,7 @@ per browser (`hintSeen`, a flag the JS side keeps in localStorage).
 -}
 
 import Array
+import Base64
 import Browser
 import Browser.Dom
 import Browser.Events
@@ -99,6 +101,7 @@ import Data
 import Dict exposing (Dict)
 import EmbeddedParts
 import FeatherIcons
+import Flate
 import Free.Catalog as FreeCatalog
 import Gear.Placements as Placements
 import Html exposing (Html, button, div, h1, h2, header, input, li, p, span, text, ul)
@@ -232,6 +235,9 @@ type alias Model =
     , liveViewerCount : Int
     , viewerRoom : Maybe String
     , viewerStatus : String
+    , reverseParticipantRoom : Maybe String
+    , reverseStatus : String
+    , participantName : String
     }
 
 
@@ -397,6 +403,7 @@ type Msg
     | LiveAnimationReceived Bool
     | LiveStatusChanged String
     | LiveError String
+    | ReverseStatusChanged String
     | DismissToast Int
     | MenuPicked Msg
     | NoOp
@@ -441,6 +448,162 @@ parseViewerRoom hash =
         Nothing
 
 
+{-| Extract the hash fragment from a URL or hash string.
+-}
+extractFragment : String -> String
+extractFragment hash =
+    case String.split "#" hash of
+        _ :: after :: _ ->
+            after
+
+        _ ->
+            hash
+
+
+{-| Parse room ID from #/reverse/:roomId/b/:base64url
+-}
+parseReverseParticipantRoom : String -> Maybe String
+parseReverseParticipantRoom hash =
+    let
+        clean =
+            extractFragment hash
+                |> String.trim
+
+        stripped =
+            if String.startsWith "/" clean then
+                String.dropLeft 1 clean
+
+            else
+                clean
+    in
+    if String.startsWith "reverse/" stripped then
+        case String.split "/" stripped of
+            _ :: roomId :: _ ->
+                if String.isEmpty roomId then
+                    Nothing
+
+                else
+                    Just (String.toUpper roomId)
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
+
+
+{-| Extract the base64url payload string from #/reverse/:roomId/b/:base64url
+-}
+parseReverseParticipantBase64 : String -> Maybe String
+parseReverseParticipantBase64 hash =
+    let
+        clean =
+            extractFragment hash
+                |> String.trim
+
+        stripped =
+            if String.startsWith "/" clean then
+                String.dropLeft 1 clean
+
+            else
+                clean
+    in
+    if String.startsWith "reverse/" stripped then
+        case String.split "/" stripped of
+            _ :: _ :: "b" :: rest ->
+                let
+                    b64 =
+                        String.join "/" rest
+                in
+                if String.isEmpty b64 then
+                    Nothing
+
+                else
+                    Just b64
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
+
+
+{-| Extract direct base64url payload string from #b/:base64url or b/:base64url
+-}
+parseDirectBase64 : String -> Maybe String
+parseDirectBase64 hash =
+    let
+        clean =
+            extractFragment hash
+                |> String.trim
+    in
+    if String.startsWith "b/" clean then
+        Just (String.dropLeft 2 clean)
+
+    else if String.startsWith "/b/" clean then
+        Just (String.dropLeft 3 clean)
+
+    else
+        Nothing
+
+
+{-| Decode a base64url-encoded compressed binary payload into HashPayload.Payload.
+-}
+decodeBase64UrlPayload : String -> Maybe HashPayload.Payload
+decodeBase64UrlPayload b64 =
+    let
+        standardB64 =
+            b64
+                |> String.replace "-" "+"
+                |> String.replace "_" "/"
+
+        padded =
+            case modBy 4 (String.length standardB64) of
+                2 ->
+                    standardB64 ++ "=="
+
+                3 ->
+                    standardB64 ++ "="
+
+                _ ->
+                    standardB64
+    in
+    Base64.toBytes padded
+        |> Maybe.andThen Flate.inflate
+        |> Maybe.andThen HashPayload.decode
+
+
+{-| Default participant display name in chosen language.
+-}
+participantDisplayName : Language -> String -> String
+participantDisplayName lang customName =
+    let
+        trimmed =
+            String.trim customName
+    in
+    if not (String.isEmpty trimmed) then
+        trimmed
+
+    else
+        case lang of
+            Fi ->
+                "Rakentaja"
+
+            En ->
+                "Builder"
+
+
+{-| Send participant snapshot through Ports.pushReverseSnapshot.
+-}
+pushReverseSnapshotFor : Model -> Cmd msg
+pushReverseSnapshotFor m =
+    Ports.pushReverseSnapshot
+        { name = participantDisplayName m.language m.participantName
+        , bytes = liveHash m
+        , brickCount = List.length (Core.getPlacements m.studio)
+        }
+
+
 {-| Initialize the Brick Play application.
 -}
 init : Flags -> ( Model, Cmd Msg )
@@ -468,35 +631,86 @@ init flags =
                     ( binaryPayload.document, isFree, inv )
 
                 Nothing ->
-                    let
-                        payload =
-                            UrlPayload.decodeHash flags.initialHash
+                    case
+                        parseReverseParticipantBase64 flags.initialHash
+                            |> Maybe.andThen decodeBase64UrlPayload
+                    of
+                        Just binaryPayload ->
+                            let
+                                isFree =
+                                    binaryPayload.mode == HashPayload.FreeBuilding
 
-                        doc =
-                            case payload.modelText of
-                                Just text ->
-                                    Document.parse text
+                                inv =
+                                    if isFree then
+                                        []
+
+                                    else
+                                        case binaryPayload.kit of
+                                            Just k ->
+                                                k
+
+                                            Nothing ->
+                                                defaultInventory
+                            in
+                            ( binaryPayload.document, isFree, inv )
+
+                        Nothing ->
+                            case
+                                parseDirectBase64 flags.initialHash
+                                    |> Maybe.andThen decodeBase64UrlPayload
+                            of
+                                Just binaryPayload ->
+                                    let
+                                        isFree =
+                                            binaryPayload.mode == HashPayload.FreeBuilding
+
+                                        inv =
+                                            if isFree then
+                                                []
+
+                                            else
+                                                case binaryPayload.kit of
+                                                    Just k ->
+                                                        k
+
+                                                    Nothing ->
+                                                        defaultInventory
+                                    in
+                                    ( binaryPayload.document, isFree, inv )
 
                                 Nothing ->
-                                    Document.empty
+                                    let
+                                        payload =
+                                            UrlPayload.decodeHash flags.initialHash
 
-                        isFree =
-                            payload.free || String.isEmpty (String.trim (String.replace "#" "" flags.initialHash))
+                                        doc =
+                                            case payload.modelText of
+                                                Just text ->
+                                                    Document.parse text
 
-                        inv =
-                            if isFree then
-                                []
+                                                Nothing ->
+                                                    Document.empty
 
-                            else if payload.partsListed then
-                                payload.parts
+                                        isFree =
+                                            payload.free || String.isEmpty (String.trim (String.replace "#" "" flags.initialHash))
 
-                            else
-                                defaultInventory
-                    in
-                    ( doc, isFree, inv )
+                                        inv =
+                                            if isFree then
+                                                []
+
+                                            else if payload.partsListed then
+                                                payload.parts
+
+                                            else
+                                                defaultInventory
+                                    in
+                                    ( doc, isFree, inv )
 
         vRoom =
             parseViewerRoom flags.initialHash
+
+        rRoom =
+            parseReverseParticipantRoom flags.initialHash
 
         isViewerMode =
             vRoom /= Nothing
@@ -591,18 +805,35 @@ init flags =
 
                 else
                     ""
+            , reverseParticipantRoom = rRoom
+            , reverseStatus =
+                if rRoom /= Nothing then
+                    "connecting"
+
+                else
+                    ""
+            , participantName = ""
             }
 
         fetchViewportSize =
             Browser.Dom.getViewport
                 |> Task.perform (\info -> WindowResized (round info.viewport.width) (round info.viewport.height))
+
+        initialCmds =
+            [ Cmd.map StudioMsg studioCmd
+            , fetchViewportSize
+            , requestDockThumbnails initialModel
+            ]
+                ++ (case rRoom of
+                        Just _ ->
+                            [ pushReverseSnapshotFor initialModel ]
+
+                        Nothing ->
+                            []
+                   )
     in
     ( withTechnicSettings (withTidy initialModel)
-    , Cmd.batch
-        [ Cmd.map StudioMsg studioCmd
-        , fetchViewportSize
-        , requestDockThumbnails initialModel
-        ]
+    , Cmd.batch initialCmds
     )
 
 
@@ -1120,10 +1351,22 @@ updateApp msg model =
             else
                 Cmd.none
 
+        reverseSnapshotCmd =
+            case settled.reverseParticipantRoom of
+                Just _ ->
+                    if hashFor model settled /= Nothing || List.length (Core.getPlacements model.studio) /= List.length (Core.getPlacements settled.studio) then
+                        pushReverseSnapshotFor settled
+
+                    else
+                        Cmd.none
+
+                Nothing ->
+                    Cmd.none
+
         ( hinted, hintCmd ) =
             withHint settled
     in
-    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, liveCmd, liveAnimationCmd, hintCmd ] )
+    ( hinted, Cmd.batch [ cmd, dockCmd, hashCmd, liveCmd, liveAnimationCmd, reverseSnapshotCmd, hintCmd ] )
 
 
 {-| Handle the opt-in dev browser bridge. `dragLDraw` projects world-space
@@ -2246,6 +2489,17 @@ step msg model =
         LiveStatusChanged status ->
             ( { model | viewerStatus = status }, Cmd.none )
 
+        ReverseStatusChanged status ->
+            let
+                cmd =
+                    if status == "live" && model.reverseParticipantRoom /= Nothing then
+                        pushReverseSnapshotFor model
+
+                    else
+                        Cmd.none
+            in
+            ( { model | reverseStatus = status }, cmd )
+
         LiveError err ->
             showToast err model
 
@@ -2778,6 +3032,7 @@ subscriptions model =
         , Ports.liveAnimationReceived LiveAnimationReceived
         , Ports.liveStatusChanged LiveStatusChanged
         , Ports.liveError LiveError
+        , Ports.reverseStatusChanged ReverseStatusChanged
         , if model.playing then
             Browser.Events.onAnimationFrameDelta Tick
 
@@ -2836,6 +3091,12 @@ view model =
 
                       else
                         text ""
+                    , case model.reverseParticipantRoom of
+                        Just roomId ->
+                            reverseParticipantBadge model roomId
+
+                        Nothing ->
+                            text ""
                     , if technicMode model then
                         playButton model.language model.playing
 
@@ -3075,6 +3336,86 @@ livePill model =
                         " viewers"
                    )
             )
+        ]
+
+
+reverseParticipantBadge : Model -> String -> Html Msg
+reverseParticipantBadge model roomId =
+    let
+        isLive =
+            model.reverseStatus == "live"
+
+        statusText =
+            case model.language of
+                Fi ->
+                    if isLive then
+                        "Yhdistetty istuntoon · " ++ roomId
+
+                    else
+                        "Yhdistetään istuntoon… · " ++ roomId
+
+                En ->
+                    if isLive then
+                        "Linked to session · " ++ roomId
+
+                    else
+                        "Connecting to session… · " ++ roomId
+
+        placedCount =
+            List.length (Core.getPlacements model.studio)
+
+        unitText =
+            case model.language of
+                Fi ->
+                    if placedCount == 1 then
+                        "palikka"
+
+                    else
+                        "palikkaa"
+
+                En ->
+                    if placedCount == 1 then
+                        "brick"
+
+                    else
+                        "bricks"
+
+        nameText =
+            participantDisplayName model.language model.participantName
+                ++ " ("
+                ++ String.fromInt placedCount
+                ++ " "
+                ++ unitText
+                ++ ")"
+    in
+    div
+        [ Attr.attribute "data-testid" "reverse-participant-badge"
+        , Attr.style "display" "inline-flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "gap" "6px"
+        , Attr.style "padding" "4px 10px"
+        , Attr.style "border-radius" "9999px"
+        , Attr.style "background" "color-mix(in srgb, var(--color-brand) 85%, transparent)"
+        , Attr.style "color" "var(--color-text-on-dark)"
+        , Attr.style "font-size" "12px"
+        , Attr.style "font-weight" "600"
+        , Attr.style "letter-spacing" "0.02em"
+        , Attr.style "border" "1px solid color-mix(in srgb, var(--color-text-on-dark) 20%, transparent)"
+        , Attr.style "pointer-events" "auto"
+        ]
+        [ div
+            [ Attr.class
+                (if isLive then
+                    "w-2 h-2 rounded-full bg-emerald-500 inline-block"
+
+                 else
+                    "w-2 h-2 rounded-full bg-amber-400 inline-block"
+                )
+            ]
+            []
+        , span [] [ text statusText ]
+        , span [ Attr.style "opacity" "0.5" ] [ text "·" ]
+        , span [] [ text nameText ]
         ]
 
 

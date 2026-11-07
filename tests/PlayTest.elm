@@ -19,6 +19,7 @@ import Main
         , helpRows
         , init
         , kitItemName
+        , parseReverseParticipantRoom
         , remainingCount
         , shareHash
         , thumbnailRequests
@@ -51,6 +52,7 @@ suite =
         , shareModalTests
         , sharingAndToastTests
         , liveSharingTests
+        , reverseParticipantTests
         , touchTests
         , dockPlacementTests
         , test "initial inventory has 10 bricks available" <|
@@ -935,6 +937,156 @@ liveSharingTests =
                 Expect.all
                     [ \_ -> Expect.equal True playingModel.playing
                     , \_ -> Expect.equal False stoppedModel.playing
+                    ]
+                    ()
+        ]
+
+
+reverseParticipantTests : Test
+reverseParticipantTests =
+    describe "Reverse Sharing participant builder integration"
+        [ describe "parseReverseParticipantRoom"
+            [ test "parses valid roomId from #/reverse/:roomId/b/:base64url" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/reverse/ROOM123/b/eJxL")
+            , test "normalizes lowercase room ID to uppercase" <|
+                \_ ->
+                    Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/reverse/abcd789/b/xyz")
+            , test "parses hash without leading slash" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "reverse/ROOM123/b/eJxL")
+            , test "rejects empty room ID" <|
+                \_ ->
+                    Expect.equal Nothing (parseReverseParticipantRoom "#/reverse//b/xyz")
+            , test "rejects non-reverse paths" <|
+                \_ ->
+                    Expect.all
+                        [ \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/watch/ABCD123")
+                        , \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#model=abc&parts=123")
+                        , \_ -> Expect.equal Nothing (parseReverseParticipantRoom "")
+                        ]
+                        ()
+            ]
+        , test "init decodes participant room, model document and kit from base64url URL" <|
+            \_ ->
+                let
+                    participantUrl =
+                        ShareModal.computeReverseParticipantUrl
+                            "https://example.com/play/"
+                            "ROOM789"
+                            ShareModal.PartsSet
+                            False
+                            Document.empty
+                            [ { part = "3001.dat", color = 14, count = 10 } ]
+
+                    ( model, cmd ) =
+                        init { testFlags | initialHash = participantUrl }
+                in
+                Expect.all
+                    [ \m -> Expect.equal (Just "ROOM789") m.reverseParticipantRoom
+                    , \m -> Expect.equal "connecting" m.reverseStatus
+                    , \m -> Expect.equal Nothing m.viewerRoom
+                    , \m -> Expect.equal False m.free
+                    , \m -> Expect.equal 10 (remainingCount m)
+                    , \_ -> Expect.notEqual Cmd.none cmd
+                    ]
+                    model
+        , test "header toolbar renders reverse participant badge" <|
+            \_ ->
+                let
+                    participantUrl =
+                        ShareModal.computeReverseParticipantUrl
+                            "https://example.com/play/"
+                            "ROOM123"
+                            ShareModal.PartsSet
+                            False
+                            Document.empty
+                            [ { part = "3001.dat", color = 14, count = 10 } ]
+
+                    ( modelConnecting, _ ) =
+                        init { testFlags | initialHash = participantUrl }
+
+                    ( modelLive, _ ) =
+                        update (ReverseStatusChanged "live") modelConnecting
+
+                    ( normalModel, _ ) =
+                        init testFlags
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view modelConnecting)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-badge") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.containing [ Selector.text "Connecting to session… · ROOM123" ] ]
+                                , Query.has [ Selector.containing [ Selector.text "Builder (0 bricks)" ] ]
+                                , Query.has [ Selector.class "bg-amber-400" ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view modelLive)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-badge") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.containing [ Selector.text "Linked to session · ROOM123" ] ]
+                                , Query.has [ Selector.containing [ Selector.text "Builder (0 bricks)" ] ]
+                                , Query.has [ Selector.class "bg-emerald-500" ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view normalModel)
+                            |> Query.findAll [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-badge") ]
+                            |> Query.count (Expect.equal 0)
+                    ]
+                    ()
+        , test "reverse participant badge supports Finnish localization" <|
+            \_ ->
+                let
+                    participantUrl =
+                        ShareModal.computeReverseParticipantUrl
+                            "https://example.com/play/"
+                            "ROOM123"
+                            ShareModal.PartsSet
+                            False
+                            Document.empty
+                            [ { part = "3001.dat", color = 14, count = 10 } ]
+
+                    ( modelConnectingFi, _ ) =
+                        init { testFlags | initialHash = participantUrl, language = Just "fi" }
+
+                    ( modelLiveFi, _ ) =
+                        update (ReverseStatusChanged "live") modelConnectingFi
+                in
+                Query.fromHtml (view modelLiveFi)
+                    |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-badge") ]
+                    |> Expect.all
+                        [ Query.has [ Selector.containing [ Selector.text "Yhdistetty istuntoon · ROOM123" ] ]
+                        , Query.has [ Selector.containing [ Selector.text "Rakentaja (0 palikkaa)" ] ]
+                        ]
+        , test "snapshot dispatch command triggers on ReverseStatusChanged live and on brick placement" <|
+            \_ ->
+                let
+                    participantUrl =
+                        ShareModal.computeReverseParticipantUrl
+                            "https://example.com/play/"
+                            "ROOM123"
+                            ShareModal.PartsSet
+                            False
+                            Document.empty
+                            [ { part = "3001.dat", color = 14, count = 10 } ]
+
+                    ( modelConnecting, _ ) =
+                        init { testFlags | initialHash = participantUrl }
+
+                    ( modelLive, liveCmd ) =
+                        update (ReverseStatusChanged "live") modelConnecting
+
+                    ( modelPlaced, placeCmd ) =
+                        addFirst modelLive
+                in
+                Expect.all
+                    [ \_ -> Expect.notEqual Cmd.none liveCmd
+                    , \_ -> Expect.notEqual Cmd.none placeCmd
+                    , \_ ->
+                        Query.fromHtml (view modelPlaced)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-badge") ]
+                            |> Query.has [ Selector.containing [ Selector.text "Builder (1 brick)" ] ]
                     ]
                     ()
         ]

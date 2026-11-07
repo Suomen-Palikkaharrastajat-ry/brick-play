@@ -78,6 +78,12 @@ const initialHash = window.location.hash ?? ''
 const watchMatch = initialHash.match(/^#\/(?:watch|live)\/([A-Za-z0-9]{4,16})/i)
 const isViewer = Boolean(watchMatch)
 const viewerRoomId = watchMatch ? watchMatch[1].toUpperCase() : null
+
+const reverseParticipantMatch = initialHash.match(/^#\/reverse\/([A-Za-z0-9]{4,16})\/b\/(.+)/i)
+const isReverseParticipant = Boolean(reverseParticipantMatch)
+const reverseRoomId = reverseParticipantMatch ? reverseParticipantMatch[1].toUpperCase() : null
+const modelHash = reverseParticipantMatch ? `#b/${reverseParticipantMatch[2]}` : null
+
 const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'https://broadcast-signaling.palikkaharrastajat.workers.dev'
 
 const runtime = initBricksRuntime({
@@ -97,7 +103,7 @@ const runtime = initBricksRuntime({
     baseUrl: window.location.origin + window.location.pathname,
   },
   initialHash,
-  syncUrlHash: !isViewer,
+  syncUrlHash: !isViewer && !isReverseParticipant,
   useWindowResize: true,
   dragDropTarget: window,
   suppressGestureTarget: window,
@@ -255,6 +261,66 @@ if (isViewer && viewerRoomId) {
   viewer.start().catch((err) => {
     runtime.app?.ports?.liveError?.send(err?.message || 'Could not connect to live view')
   })
+} else if (isReverseParticipant && reverseRoomId) {
+  viewer = new Viewer(
+    signalingUrl,
+    reverseRoomId,
+    {
+      onStatus: (s) => runtime.app?.ports?.reverseStatusChanged?.send(s),
+      onError: (err) => runtime.app?.ports?.liveError?.send(err),
+    }
+  )
+  viewer.start().catch((err) => {
+    runtime.app?.ports?.reverseStatusChanged?.send('ended')
+  })
+
+  if (runtime.app?.ports?.pushReverseSnapshot) {
+    let debounceTimer = null
+    let latestData = null
+
+    const sendSnapshot = () => {
+      if (!latestData || !viewer) return
+      const canvas = document.querySelector('canvas')
+      let thumbnail = ''
+      if (canvas && typeof canvas.toDataURL === 'function') {
+        try {
+          thumbnail = canvas.toDataURL('image/webp', 0.6)
+        } catch {
+          thumbnail = ''
+        }
+      }
+      viewer.sendParticipantSnapshot({
+        name: latestData.name,
+        bytes: latestData.bytes,
+        thumbnail,
+        brickCount: latestData.brickCount,
+      })
+    }
+
+    runtime.app.ports.pushReverseSnapshot.subscribe((data) => {
+      latestData = data
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        sendSnapshot()
+      }, 400)
+    })
+  }
+
+  if (runtime.app?.ports?.setUrlHash) {
+    let hashFrame = null
+    runtime.app.ports.setUrlHash.subscribe((payload) => {
+      if (hashFrame !== null) clearTimeout(hashFrame)
+      hashFrame = setTimeout(() => {
+        hashFrame = null
+        const uint8 = toUint8Array(payload)
+        const b64 = encodeHash(uint8).replace(/^#b\//, '')
+        window.history.replaceState(null, '', `#/reverse/${reverseRoomId}/b/${b64}`)
+      }, 16)
+    })
+  }
 }
 
 initSnapshots(runtime.app?.ports)
