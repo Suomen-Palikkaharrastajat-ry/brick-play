@@ -21,3 +21,30 @@
     display: block;
   }
 }
+
+/* Palettes: hide scrollbars, enable smooth touch/wheel panning, provide edge fade cues */
+.palette-scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+
+.palette-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.palette-scroll-y {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent 100%);
+}
+
+.palette-scroll-y::-webkit-scrollbar {
+  display: none;
+}

@@ -173,3 +173,108 @@ initSnapshots(runtime.app?.ports)
 
 // Rendered part images for the dock (the kit, or the Technic catalog), with the parts' .dat titles as names.
 initThumbnails(runtime.app?.ports, ldrawBase, { titles: true })
+
+// Palettes: dynamic edge fade masks indicating scroll overflow, and wheel-to-horizontal scrolling
+function setupPaletteScrolling() {
+  function updateScrollMask(el) {
+    if (!el || !(el instanceof HTMLElement)) return
+    if (el.classList.contains('palette-scroll-x')) {
+      const scrollWidth = el.scrollWidth
+      const clientWidth = el.clientWidth
+      if (scrollWidth <= clientWidth + 2) {
+        el.style.webkitMaskImage = 'none'
+        el.style.maskImage = 'none'
+        return
+      }
+      const atStart = el.scrollLeft <= 4
+      const atEnd = el.scrollLeft + clientWidth >= scrollWidth - 4
+      if (atStart && !atEnd) {
+        el.style.webkitMaskImage = 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)'
+        el.style.maskImage = 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)'
+      } else if (!atStart && atEnd) {
+        el.style.webkitMaskImage = 'linear-gradient(to right, transparent 0, black 24px)'
+        el.style.maskImage = 'linear-gradient(to right, transparent 0, black 24px)'
+      } else {
+        el.style.webkitMaskImage = 'linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%)'
+        el.style.maskImage = 'linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%)'
+      }
+    } else if (el.classList.contains('palette-scroll-y')) {
+      const scrollHeight = el.scrollHeight
+      const clientHeight = el.clientHeight
+      if (scrollHeight <= clientHeight + 2) {
+        el.style.webkitMaskImage = 'none'
+        el.style.maskImage = 'none'
+        return
+      }
+      const atStart = el.scrollTop <= 4
+      const atEnd = el.scrollTop + clientHeight >= scrollHeight - 4
+      if (atStart && !atEnd) {
+        el.style.webkitMaskImage = 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)'
+        el.style.maskImage = 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)'
+      } else if (!atStart && atEnd) {
+        el.style.webkitMaskImage = 'linear-gradient(to bottom, transparent 0, black 20px)'
+        el.style.maskImage = 'linear-gradient(to bottom, transparent 0, black 20px)'
+      } else {
+        el.style.webkitMaskImage = 'linear-gradient(to bottom, transparent 0, black 20px, black calc(100% - 20px), transparent 100%)'
+        el.style.maskImage = 'linear-gradient(to bottom, transparent 0, black 20px, black calc(100% - 20px), transparent 100%)'
+      }
+    }
+  }
+
+  window.addEventListener(
+    'scroll',
+    (event) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.classList.contains('palette-scroll-x') || target.classList.contains('palette-scroll-y'))) {
+        updateScrollMask(target)
+      }
+    },
+    { capture: true, passive: true }
+  )
+
+  window.addEventListener(
+    'wheel',
+    (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const scroller = target.closest('.palette-scroll-x')
+      if (!scroller || !(scroller instanceof HTMLElement)) return
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && event.deltaY !== 0) {
+        scroller.scrollLeft += event.deltaY
+        event.preventDefault()
+        updateScrollMask(scroller)
+      }
+    },
+    { passive: false }
+  )
+
+  const refreshAll = () => {
+    document.querySelectorAll('.palette-scroll-x, .palette-scroll-y').forEach((el) => {
+      if (el instanceof HTMLElement) updateScrollMask(el)
+    })
+  }
+
+  document.addEventListener(
+    'pointerenter',
+    (event) => {
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const scroller = target.closest('.palette-scroll-x, .palette-scroll-y')
+        if (scroller instanceof HTMLElement) {
+          updateScrollMask(scroller)
+        }
+      }
+    },
+    { capture: true, passive: true }
+  )
+
+  const appRoot = document.getElementById('app')
+  if (appRoot && typeof MutationObserver === 'function') {
+    const observer = new MutationObserver(refreshAll)
+    observer.observe(appRoot, { childList: true, subtree: true })
+  }
+
+  requestAnimationFrame(refreshAll)
+}
+
+setupPaletteScrolling()

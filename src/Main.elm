@@ -3009,7 +3009,9 @@ narrowRow model =
                 , Attr.style "min-width" "0"
                 , Attr.style "overflow-x" "auto"
                 , Attr.style "overflow-y" "hidden"
-                , Attr.class "scroll-thin"
+                , Attr.style "scrollbar-width" "none"
+                , Attr.style "-ms-overflow-style" "none"
+                , Attr.class "scroll-none"
                 , Attr.style "pointer-events" "auto"
                 ]
                 [ if model.cameraShown then
@@ -3549,7 +3551,9 @@ kitDockView model =
         , Attr.style "max-width" "100%"
         , Attr.style "overflow-x" "auto"
         , Attr.style "overflow-y" "hidden"
-        , Attr.class "scroll-thin"
+        , Attr.style "scrollbar-width" "none"
+        , Attr.style "-ms-overflow-style" "none"
+        , Attr.class "palette-scroll-x"
         , Attr.style "padding" "0.5rem"
         , Attr.style "background" "rgba(5, 19, 29, 0.9)"
         , Attr.style "backdrop-filter" "blur(12px)"
@@ -3665,7 +3669,9 @@ colourRow model =
         , Attr.style "max-height" "calc(100% - 0.25rem)"
         , Attr.style "overflow-y" "auto"
         , Attr.style "overflow-x" "hidden"
-        , Attr.style "scrollbar-width" "thin"
+        , Attr.style "scrollbar-width" "none"
+        , Attr.style "-ms-overflow-style" "none"
+        , Attr.class "palette-scroll-y"
         , Attr.style "align-content" "start"
         , Attr.style "flex-shrink" "0"
         ]
@@ -3747,7 +3753,9 @@ tabRow model =
         , Attr.style "min-width" "0"
         , Attr.style "overflow-x" "auto"
         , Attr.style "overflow-y" "hidden"
-        , Attr.class "scroll-thin"
+        , Attr.style "scrollbar-width" "none"
+        , Attr.style "-ms-overflow-style" "none"
+        , Attr.class "scroll-none"
         ]
         (List.map (tabButton model.language model.activeTab) FreeCatalog.tabs)
 
@@ -3893,7 +3901,9 @@ cardsRow model =
         , Attr.style "min-width" "0"
         , Attr.style "overflow-x" "auto"
         , Attr.style "overflow-y" "hidden"
-        , Attr.class "scroll-thin"
+        , Attr.style "scrollbar-width" "none"
+        , Attr.style "-ms-overflow-style" "none"
+        , Attr.class "palette-scroll-x"
         , Attr.style "padding" "0.125rem"
         ]
         children
