@@ -3515,7 +3515,7 @@ viewReverseGrid model roomId =
         badgeText =
             case model.language of
                 Fi ->
-                    "SEURANTARUUDUKKO · " ++ roomId
+                    "PALIKKALEIKKIKENTTÄ · " ++ roomId
 
                 En ->
                     "GRID STUDIO · " ++ roomId

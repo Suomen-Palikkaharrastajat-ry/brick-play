@@ -1143,7 +1143,7 @@ viewReverseToggle lang isReverse onToggle =
                 [ text
                     (case lang of
                         Fi ->
-                            "Käänteinen jakaminen (seurantaruudukko)"
+                            "Käänteinen jakaminen (palikkaleikkikenttä)"
 
                         En ->
                             "Reverse sharing (participant grid)"
@@ -1295,7 +1295,7 @@ viewHostCard lang config model =
                 [ text
                     (case lang of
                         Fi ->
-                            "Oma seurantaruudukko"
+                            "Palikkaleikkikenttä"
 
                         En ->
                             "Host grid link"
