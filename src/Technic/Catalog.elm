@@ -85,6 +85,108 @@ curatedParts =
       , category = GearsCategory
       , description = "28-tooth turntable top gear"
       }
+    , { name = "8T Reinforced Gear"
+      , file = "10928.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "8-tooth reinforced spur gear"
+      }
+    , { name = "8T Reinforced Sliding Gear"
+      , file = "11955.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "8-tooth reinforced sliding spur gear"
+      }
+    , { name = "60T Turntable Top"
+      , file = "18938.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "60-tooth rotating turntable top; motor capable"
+      }
+    , { name = "20T Double-Bevel Gear"
+      , file = "32269.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "20-tooth double-bevel gear"
+      }
+    , { name = "12T Double-Bevel Gear"
+      , file = "32270.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "12-tooth double-bevel gear"
+      }
+    , { name = "2-Start Worm Gear"
+      , file = "32905.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "2-tooth, two-start sliding worm gear"
+      }
+    , { name = "24T Gear with Single Axle Hole"
+      , file = "3648b.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "24-tooth spur gear with pin holes"
+      }
+    , { name = "24T Crown Gear Type 2"
+      , file = "3650b.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "24-tooth crown gear"
+      }
+    , { name = "24T Crown Gear Type 3"
+      , file = "3650c.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "Replacement 24-tooth crown gear"
+      }
+    , { name = "14T Bevel Gear"
+      , file = "4143.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "14-tooth bevel gear"
+      }
+    , { name = "1-Start Worm Gear"
+      , file = "4716.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "1-tooth, single-start worm gear"
+      }
+    , { name = "12T Bevel Gear"
+      , file = "6589.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "12-tooth bevel gear"
+      }
+    , { name = "12T Gear"
+      , file = "69778.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "12-tooth spur gear"
+      }
+    , { name = "Turntable 28T Bottom"
+      , file = "99009.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "28-tooth fixed turntable base; not motor capable"
+      }
+    , { name = "20T Bevel Gear (Replacement)"
+      , file = "32198a.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "Replacement 20-tooth bevel gear"
+      }
+    , { name = "20T Bevel Gear (Legacy Alias)"
+      , file = "32198.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "Legacy filename moved to 32198a.dat"
+      }
+    , { name = "24T Crown Gear (Legacy Alias)"
+      , file = "3650.dat"
+      , color = 7
+      , category = GearsCategory
+      , description = "Legacy filename moved to 3650c.dat"
+      }
 
     -- Beams
     , { name = "Beam 1x5"

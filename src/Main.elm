@@ -917,9 +917,10 @@ init flags =
     )
 
 
-{-| Technic mode, derived from the model: on when the document holds a gear that
-`Technic.Machine` recognises, or when a puzzle's kit lists a gear part. Free
-building has no kit, so only the board's gears count there.
+{-| Technic mode, derived from the model: on when the document holds a
+motor-capable gear that `Technic.Machine` recognises, or when a puzzle's kit
+lists a motor-capable gear part. Free building has no kit, so only the board's
+gears count there.
 -}
 technicMode : Model -> Bool
 technicMode model =
@@ -929,7 +930,7 @@ technicMode model =
 
 isGearFile : String -> Bool
 isGearFile file =
-    List.any (\spec -> spec.partFile == file) Data.gearParts
+    List.any (\spec -> spec.partFile == file && spec.motorCapable && spec.rotates) Data.gearParts
 
 
 {-| The search box is empty (or only spaces), so the dock shows its tab.

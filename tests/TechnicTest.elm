@@ -4,6 +4,7 @@ module TechnicTest exposing (suite)
 on, the Technic catalog dock, Technic placement and the machine's accomplishment.
 -}
 
+import Array
 import Data
 import Dict
 import EmbeddedParts
@@ -12,6 +13,7 @@ import Free.Catalog as FreeCatalog
 import Gear.Detect as Detect
 import Gear.Phase as Phase
 import Gear.Placements as Placements
+import Gear.Types exposing (GearAxis(..), GearHoleKind(..), GearKind(..))
 import Html.Attributes as Attr
 import I18n
 import LDraw.Document as Document
@@ -48,20 +50,138 @@ suite =
         , snapshotTests
         , sharingAndToastTests
         , describe "Curated Catalog"
-            [ test "curatedParts contains all required gears" <|
+            [ test "Gears palette covers every catalog gear and retained alias" <|
                 \_ ->
                     let
                         gearFiles =
                             Catalog.partsForCategory GearsCategory
                                 |> List.map .file
+
+                        engineGearFiles =
+                            Data.gearParts |> List.map .partFile
+
+                        catalogGearFiles =
+                            [ "3647.dat"
+                            , "4019.dat"
+                            , "3648.dat"
+                            , "3649.dat"
+                            , "10928.dat"
+                            , "11955.dat"
+                            , "18938.dat"
+                            , "32269.dat"
+                            , "32270.dat"
+                            , "32905.dat"
+                            , "3648b.dat"
+                            , "3650.dat"
+                            , "3650b.dat"
+                            , "4143.dat"
+                            , "4716.dat"
+                            , "6589.dat"
+                            , "69778.dat"
+                            , "99009.dat"
+                            , "99010.dat"
+                            , "32198.dat"
+                            , "32198a.dat"
+                            , "3650c.dat"
+                            ]
                     in
                     Expect.all
-                        [ \files -> Expect.equal (List.member "3647.dat" files) True
-                        , \files -> Expect.equal (List.member "4019.dat" files) True
-                        , \files -> Expect.equal (List.member "3648.dat" files) True
-                        , \files -> Expect.equal (List.member "3649.dat" files) True
+                        [ \_ -> Expect.equal (List.sort catalogGearFiles) (List.sort engineGearFiles)
+                        , \_ -> Expect.equal (List.sort engineGearFiles) (List.sort gearFiles)
                         ]
-                        gearFiles
+                        ()
+            , test "registered catalog tooth counts, pitch radii, and gear kinds are exact" <|
+                \_ ->
+                    let
+                        actual =
+                            Data.gearParts
+                                |> List.map (\spec -> ( ( spec.partFile, spec.teeth, spec.pitchRadius ), spec.kind ))
+
+                        expected =
+                            [ ( ( "3647.dat", 8, 10 ), SpurGear )
+                            , ( ( "10928.dat", 8, 10 ), SpurGear )
+                            , ( ( "11955.dat", 8, 10 ), SpurGear )
+                            , ( ( "4019.dat", 16, 20 ), SpurGear )
+                            , ( ( "3648.dat", 24, 30 ), SpurGear )
+                            , ( ( "3648b.dat", 24, 30 ), SpurGear )
+                            , ( ( "3649.dat", 40, 50 ), SpurGear )
+                            , ( ( "4716.dat", 1, 12 ), WormGear )
+                            , ( ( "32905.dat", 2, 12 ), WormGear )
+                            , ( ( "69778.dat", 12, 12 ), SpurGear )
+                            , ( ( "32198.dat", 20, 25 ), BevelGear )
+                            , ( ( "32198a.dat", 20, 25 ), BevelGear )
+                            , ( ( "32269.dat", 20, 25 ), BevelGear )
+                            , ( ( "32270.dat", 12, 15 ), BevelGear )
+                            , ( ( "4143.dat", 14, 17.5 ), BevelGear )
+                            , ( ( "6589.dat", 12, 15 ), BevelGear )
+                            , ( ( "3650.dat", 24, 30 ), CrownGear )
+                            , ( ( "3650b.dat", 24, 30 ), CrownGear )
+                            , ( ( "3650c.dat", 24, 30 ), CrownGear )
+                            , ( ( "18938.dat", 60, 75 ), TurntableGear )
+                            , ( ( "99009.dat", 28, 35 ), TurntableGear )
+                            , ( ( "99010.dat", 28, 35 ), TurntableGear )
+                            ]
+                    in
+                    Expect.equal expected actual
+            , test "all gear metadata has valid positive tooth counts and pitch radii" <|
+                \_ ->
+                    Data.gearParts
+                        |> List.all (\spec -> spec.teeth > 0 && spec.pitchRadius > 0 && (not spec.motorCapable || spec.rotates))
+                        |> Expect.equal True
+            , test "bevel, crown, and worm classes are explicit and worm starts are counted" <|
+                \_ ->
+                    let
+                        kindFor part =
+                            Data.gearParts
+                                |> List.filter (\spec -> spec.partFile == part)
+                                |> List.head
+                                |> Maybe.map .kind
+                    in
+                    Expect.equal
+                        [ Just BevelGear, Just CrownGear, Just WormGear, Just WormGear ]
+                        [ kindFor "4143.dat", kindFor "3650c.dat", kindFor "4716.dat", kindFor "32905.dat" ]
+            , test "turntable motor decision and configurable gear holes are explicit" <|
+                \_ ->
+                    let
+                        specFor part =
+                            Data.gearParts
+                                |> List.filter (\spec -> spec.partFile == part)
+                                |> List.head
+
+                        holeKinds part =
+                            specFor part
+                                |> Maybe.map (.holes >> List.map .kind)
+                                |> Maybe.withDefault []
+
+                        holeOffsets part =
+                            specFor part
+                                |> Maybe.map (.holes >> List.map (\hole -> ( hole.x, hole.y )) >> List.sort)
+                                |> Maybe.withDefault []
+
+                        motorFlags =
+                            [ specFor "99009.dat" |> Maybe.map .motorCapable
+                            , specFor "99010.dat" |> Maybe.map .motorCapable
+                            , specFor "18938.dat" |> Maybe.map .motorCapable
+                            ]
+
+                        rotatingFlags =
+                            [ specFor "99009.dat" |> Maybe.map .rotates
+                            , specFor "99010.dat" |> Maybe.map .rotates
+                            , specFor "18938.dat" |> Maybe.map .rotates
+                            ]
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal [ Just False, Just True, Just True ] motorFlags
+                        , \_ -> Expect.equal [ Just False, Just True, Just True ] rotatingFlags
+                        , \_ -> Expect.equal 5 (List.length (holeKinds "3648b.dat"))
+                        , \_ -> Expect.equal True (List.member PinHole (holeKinds "3648b.dat"))
+                        , \_ -> Expect.equal True (List.member AxleHole (holeKinds "3648b.dat"))
+                        , \_ -> Expect.equal 2 (List.length (holeKinds "99010.dat"))
+                        , \_ -> Expect.equal [ ( -20, -10 ), ( 20, -10 ) ] (holeOffsets "99010.dat")
+                        , \_ -> Expect.equal AxisY (specFor "99010.dat" |> Maybe.map .axis |> Maybe.withDefault AxisZ)
+                        , \_ -> Expect.equal AxisY (specFor "18938.dat" |> Maybe.map .axis |> Maybe.withDefault AxisZ)
+                        ]
+                        ()
             , test "curatedParts contains beams, axles, and pins" <|
                 \_ ->
                     let
@@ -108,6 +228,52 @@ suite =
                     Expect.all
                         [ \s -> Expect.equal (List.length s.gears) 1
                         , \s -> Expect.equal (Machine.isAccomplished s) False
+                        ]
+                        state
+            , test "fixed 28T turntable base is not a rotating machine gear" <|
+                \_ ->
+                    let
+                        base =
+                            { part = "99009.dat", color = 7, matrix = Mat4.identity }
+
+                        ( doc, _ ) =
+                            Edit.apply (Edit.Add [ base ]) Document.empty
+
+                        state =
+                            Machine.analyseMachine doc EmbeddedParts.cache
+                    in
+                    Expect.all
+                        [ \s -> Expect.equal [] s.gears
+                        , \s -> Expect.equal 1 (Array.length s.gearGraph.instances)
+                        , \s -> Expect.equal Nothing s.motorGearId
+                        , \s -> Expect.equal False (Machine.isAccomplished s)
+                        ]
+                        state
+            , test "leading fixed bases stay in the graph without renumbering a meshing motor pair" <|
+                \_ ->
+                    let
+                        fixedAt x =
+                            { part = "99009.dat", color = 7, matrix = Mat4.makeTranslate (vec3 x 0 0) }
+
+                        smallGear =
+                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 0 0) }
+
+                        gear16 =
+                            { part = "4019.dat", color = 7, matrix = Mat4.makeTranslate (vec3 30 0 0) }
+
+                        ( doc, _ ) =
+                            Edit.apply (Edit.Add [ fixedAt 100, fixedAt 200, smallGear, gear16 ]) Document.empty
+
+                        state =
+                            Machine.analyseMachine doc EmbeddedParts.cache
+                    in
+                    Expect.all
+                        [ \s -> Expect.equal [ 2, 3 ] (List.map .id s.gears)
+                        , \s -> Expect.equal 4 (Array.length s.gearGraph.instances)
+                        , \s -> Expect.equal (Just 2) s.motorGearId
+                        , \s -> Expect.equal 2 s.rotatingCount
+                        , \s -> Expect.equal True s.isSingleMachine
+                        , \s -> Expect.equal True (Machine.isAccomplished s)
                         ]
                         state
             , test "two meshing gears (8T and 16T at distance 30) form an accomplished machine" <|
@@ -1535,6 +1701,9 @@ technicTests =
         , test "is on for a URL kit that lists a gear, with no gear placed" <|
             \_ ->
                 Expect.equal True (technicMode (Tuple.first (init { testFlags | initialHash = "#parts=3648.dat:7:1" })))
+        , test "is off for a kit containing only the fixed turntable base" <|
+            \_ ->
+                Expect.equal False (technicMode (Tuple.first (init { testFlags | initialHash = "#parts=99009.dat:7:1" })))
         , test "is off for a URL kit with no gear" <|
             \_ ->
                 Expect.equal False (technicMode (Tuple.first (init { testFlags | initialHash = "#parts=3001.dat:14:4" })))

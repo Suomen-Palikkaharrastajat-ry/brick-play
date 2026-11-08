@@ -21,6 +21,11 @@ import LDraw.Resolve exposing (PartCache)
 
 
 {-| Analyzed state of the Technic machine.
+
+`gearGraph` retains every extracted gear instance (and its original ID),
+including fixed parts. `gears` is the rotatable display/accomplishment set when
+there is a motor-capable gear; it is empty when the graph has no motor source.
+
 -}
 type alias MachineState =
     { gears : List GearInstance
@@ -39,13 +44,16 @@ analyseMachine document partCache =
         lines =
             Document.toLines document
 
-        gears =
+        allGears =
             Detect.extractGears Data.gearParts lines partCache
 
+        rotatingGears =
+            List.filter (\gear -> gear.spec.rotates) allGears
+
         graph =
-            Detect.buildGearGraph gears
+            Detect.buildGearGraph allGears
     in
-    case gears of
+    case List.filter (\gear -> gear.spec.motorCapable) rotatingGears of
         [] ->
             { gears = []
             , gearGraph = graph
@@ -54,10 +62,10 @@ analyseMachine document partCache =
             , motorGearId = Nothing
             }
 
-        firstGear :: _ ->
+        firstMotor :: _ ->
             let
                 motorId =
-                    firstGear.id
+                    firstMotor.id
 
                 -- Propagate with arbitrary angle to identify all reachable gears
                 reachedAngles =
@@ -67,9 +75,9 @@ analyseMachine document partCache =
                     Dict.size reachedAngles
 
                 singleMachine =
-                    List.length gears >= 2 && connectedCount == List.length gears
+                    List.length rotatingGears >= 2 && connectedCount == List.length rotatingGears
             in
-            { gears = gears
+            { gears = rotatingGears
             , gearGraph = graph
             , rotatingCount = connectedCount
             , isSingleMachine = singleMachine
