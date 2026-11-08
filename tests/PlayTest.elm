@@ -1883,9 +1883,15 @@ shareModalTests =
                 Query.fromHtml (view reverseActiveFi)
                     |> Expect.all
                         [ Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-card") ]
-                            >> Query.has [ Selector.text "Osallistujan linkki" ]
+                            >> Expect.all
+                                [ Query.has [ Selector.text "Osallistujan linkki" ]
+                                , Query.has [ Selector.text "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi." ]
+                                ]
                         , Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-host-card") ]
-                            >> Query.has [ Selector.text "Ohjaajan linkki" ]
+                            >> Expect.all
+                                [ Query.has [ Selector.text "Ohjaajan linkki" ]
+                                , Query.has [ Selector.text "Pidä tämä linkki itselläsi nähdäksesi kaikki osallistujat." ]
+                                ]
                         ]
         , test "Two-column desktop layout divides selectors and actions" <|
             \_ ->

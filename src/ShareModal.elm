@@ -1259,28 +1259,34 @@ viewParticipantCard lang config model =
         , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
         , Attr.style "background" Theme.panelSubtleBackground
         ]
-        ([ div
-            [ Attr.style "font-size" "13px"
-            , Attr.style "font-weight" "600"
-            , Attr.style "color" Theme.textPrimary
+        ((if hasQr then
+            [ viewQrToggleCustom lang model.showQr config.onToggleQr "participant-qr-toggle"
+            , viewParticipantQrCode lang participantUrl model.showQr
             ]
-            [ text
-                (case lang of
-                    Fi ->
-                        "Osallistujan linkki"
 
-                    En ->
-                        "Participant link"
-                )
-            ]
-         ]
-            ++ (if hasQr then
-                    [ viewQrToggleCustom lang model.showQr config.onToggleQr "participant-qr-toggle"
-                    , viewParticipantQrCode lang participantUrl model.showQr
+          else
+            []
+         )
+            ++ [ div
+                    [ Attr.style "display" "flex"
+                    , Attr.style "flex-direction" "column"
+                    , Attr.style "gap" "2px"
                     ]
-
-                else
                     [ div
+                        [ Attr.style "font-size" "13px"
+                        , Attr.style "font-weight" "600"
+                        , Attr.style "color" Theme.textPrimary
+                        ]
+                        [ text
+                            (case lang of
+                                Fi ->
+                                    "Osallistujan linkki"
+
+                                En ->
+                                    "Participant link"
+                            )
+                        ]
+                    , div
                         [ Attr.style "font-size" "11px"
                         , Attr.style "color" Theme.textMuted
                         , Attr.style "line-height" "1.3"
@@ -1295,7 +1301,7 @@ viewParticipantCard lang config model =
                             )
                         ]
                     ]
-               )
+               ]
             ++ [ div
                     [ Attr.style "display" "flex"
                     , Attr.style "gap" "6px"
@@ -1513,22 +1519,6 @@ viewParticipantQrCode lang url showQr =
                     , Attr.style "text-align" "center"
                     ]
                     [ text (I18n.shareScanQrHint lang) ]
-                , div
-                    [ Attr.style "font-size" "11px"
-                    , Attr.style "color" Theme.textMuted
-                    , Attr.style "text-align" "center"
-                    , Attr.style "line-height" "1.3"
-                    , Attr.style "max-width" "240px"
-                    ]
-                    [ text
-                        (case lang of
-                            Fi ->
-                                "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi."
-
-                            En ->
-                                "Share this link with builders. Each participant will appear in real time on your grid."
-                        )
-                    ]
                 ]
 
         Err _ ->
