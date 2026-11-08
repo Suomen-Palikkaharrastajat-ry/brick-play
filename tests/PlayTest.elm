@@ -1793,6 +1793,170 @@ shareModalTests =
                                 Expect.fail "Share modal was not open"
                     ]
                     ()
+        , test "Two-column desktop layout divides selectors and actions" <|
+            \_ ->
+                let
+                    ( modelOpen, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+                in
+                Query.fromHtml (view modelOpen)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal-left-column") ]
+                            >> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "role" "radiogroup") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
+                                ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-modal-right-column") ]
+                            >> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                                ]
+                        ]
+        , test "Mobile QR code toggle expands and collapses QR code on request with i18n labels" <|
+            \_ ->
+                let
+                    ( modelEn, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( toggledEn, _ ) =
+                        update ToggleShareQr modelEn
+
+                    ( collapsedEn, _ ) =
+                        update ToggleShareQr toggledEn
+
+                    ( modelFi, _ ) =
+                        init { testFlags | language = Just "fi" } |> Tuple.first |> update OpenShareModal
+
+                    ( toggledFi, _ ) =
+                        update ToggleShareQr modelFi
+                in
+                Expect.all
+                    [ \_ ->
+                        case modelEn.shareModal of
+                            Just sm ->
+                                Expect.equal False sm.showQr
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view modelEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Show QR code" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-expanded" "false") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view modelEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                            |> Query.has [ Selector.class "qr-container-collapsed" ]
+                    , \_ ->
+                        Query.fromHtml (view modelEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect ToggleShareQr
+                    , \_ ->
+                        case toggledEn.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.showQr
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view toggledEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Hide QR code" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-expanded" "true") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view toggledEn)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                            |> Query.hasNot [ Selector.class "qr-container-collapsed" ]
+                    , \_ ->
+                        case collapsedEn.shareModal of
+                            Just sm ->
+                                Expect.equal False sm.showQr
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view modelFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                            |> Query.has [ Selector.text "Näytä QR-koodi" ]
+                    , \_ ->
+                        Query.fromHtml (view toggledFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                            |> Query.has [ Selector.text "Piilota QR-koodi" ]
+                    ]
+                    ()
+        , test "Participant QR code toggle in reverse sharing mode" <|
+            \_ ->
+                let
+                    ( modelOpen, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( reverseActive, _ ) =
+                        update ToggleReverseSharing modelOpen
+
+                    ( qrExpanded, _ ) =
+                        update ToggleShareQr reverseActive
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view reverseActive)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-toggle") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Show QR code" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-expanded" "false") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view reverseActive)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-container") ]
+                            |> Query.has [ Selector.class "qr-container-collapsed" ]
+                    , \_ ->
+                        Query.fromHtml (view reverseActive)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-toggle") ]
+                            |> Event.simulate Event.click
+                            |> Event.expect ToggleShareQr
+                    , \_ ->
+                        case qrExpanded.shareModal of
+                            Just sm ->
+                                Expect.equal True sm.showQr
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    , \_ ->
+                        Query.fromHtml (view qrExpanded)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-toggle") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.text "Hide QR code" ]
+                                , Query.has [ Selector.attribute (Attr.attribute "aria-expanded" "true") ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view qrExpanded)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-qr-container") ]
+                            |> Query.hasNot [ Selector.class "qr-container-collapsed" ]
+                    ]
+                    ()
+        , test "QR toggle button is not displayed when shareable link is too big" <|
+            \_ ->
+                let
+                    hugeFlags =
+                        { testFlags | baseUrl = Just ("https://palikkaharrastajat.fi/play/" ++ String.repeat 3000 "x") }
+
+                    ( model0, _ ) =
+                        init hugeFlags
+
+                    ( modalOpen, _ ) =
+                        update OpenShareModal model0
+                in
+                Query.fromHtml (view modalOpen)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                        ]
         ]
 
 

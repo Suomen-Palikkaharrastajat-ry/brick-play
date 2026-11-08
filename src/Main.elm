@@ -406,6 +406,7 @@ type Msg
     | CopyShareUrl
     | DismissShareCopied
     | ToggleReverseSharing
+    | ToggleShareQr
     | CopyParticipantUrl
     | CopyHostUrl
     | ShareModalMsg ShareModal.Msg
@@ -2414,6 +2415,11 @@ step msg model =
             , Cmd.none
             )
 
+        ToggleShareQr ->
+            ( { model | shareModal = Maybe.map (ShareModal.update ShareModal.ToggleQr) model.shareModal }
+            , Cmd.none
+            )
+
         ShareModalMsg subMsg ->
             ( { model | shareModal = Maybe.map (ShareModal.update subMsg) model.shareModal }
             , Cmd.none
@@ -3395,6 +3401,7 @@ viewNormalBuilder model =
                     , onToggleReverseSharing = ToggleReverseSharing
                     , onCopyParticipantUrl = CopyParticipantUrl
                     , onCopyHostUrl = CopyHostUrl
+                    , onToggleQr = ToggleShareQr
                     }
                     sm
 

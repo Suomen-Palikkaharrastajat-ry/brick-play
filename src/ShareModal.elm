@@ -4,6 +4,7 @@ module ShareModal exposing
     , Msg(..)
     , ShareKind(..)
     , availableKinds
+    , canGenerateQr
     , computeBase64
     , computeHash
     , computeReverseHostUrl
@@ -19,6 +20,8 @@ module ShareModal exposing
     , isReverseSharingApplicable
     , kindToTestId
     , payloadFor
+    , shareHideQr
+    , shareShowQr
     , update
     , view
     , viewWithLanguage
@@ -73,6 +76,7 @@ type alias Model =
     , reverseRoomId : String
     , copiedParticipant : Bool
     , copiedHost : Bool
+    , showQr : Bool
     }
 
 
@@ -82,6 +86,8 @@ type Msg
     = ToggleReverseSharing
     | SetReverseSharing Bool
     | SetReverseRoomId String
+    | ToggleQr
+    | SetShowQr Bool
 
 
 {-| Update ShareModal model state.
@@ -97,6 +103,12 @@ update msg model =
 
         SetReverseRoomId roomId ->
             { model | reverseRoomId = roomId }
+
+        ToggleQr ->
+            { model | showQr = not model.showQr }
+
+        SetShowQr val ->
+            { model | showQr = val }
 
 
 {-| Configuration and callbacks needed to render the modal.
@@ -117,6 +129,7 @@ type alias Config msg =
     , onToggleReverseSharing : msg
     , onCopyParticipantUrl : msg
     , onCopyHostUrl : msg
+    , onToggleQr : msg
     }
 
 
@@ -178,6 +191,7 @@ init kind =
     , reverseRoomId = defaultReverseRoomId
     , copiedParticipant = False
     , copiedHost = False
+    , showQr = False
     }
 
 
@@ -196,6 +210,7 @@ initWithRoomId roomId kind =
             roomId
     , copiedParticipant = False
     , copiedHost = False
+    , showQr = False
     }
 
 
@@ -491,9 +506,9 @@ viewWithLanguage lang config model =
         , -- Modal Card
           div
             [ Attr.attribute "data-testid" "share-modal"
+            , Attr.class "share-modal-card"
             , Attr.style "position" "relative"
             , Attr.style "z-index" "1"
-            , Attr.style "max-width" "min(360px, calc(100vw - 24px))"
             , Attr.style "max-height" "calc(100vh - 24px)"
             , Attr.style "width" "100%"
             , Attr.style "background" Theme.panelSurface
@@ -542,72 +557,175 @@ viewWithLanguage lang config model =
                 ]
             , -- Modal Body
               div
-                [ Attr.style "padding" "16px"
-                , Attr.style "display" "flex"
-                , Attr.style "flex-direction" "column"
-                , Attr.style "gap" "12px"
+                [ Attr.class "share-modal-body"
+                , Attr.style "padding" "16px"
+                , Attr.style "box-sizing" "border-box"
                 ]
-                [ -- Feature Selector (Radio Cards)
+                [ -- Left column: Feature selector cards and mode options
                   div
-                    [ Attr.attribute "role" "radiogroup"
-                    , Attr.attribute "aria-label" (I18n.shareModalTitle lang)
+                    [ Attr.attribute "data-testid" "share-modal-left-column"
                     , Attr.style "display" "flex"
                     , Attr.style "flex-direction" "column"
-                    , Attr.style "gap" "8px"
+                    , Attr.style "gap" "12px"
                     ]
-                    (List.map (viewRadioCard lang model.selected config.onSelectKind) kinds)
-                , if model.selected == LivePreview then
-                    if config.liveBroadcasting then
-                        div
-                            [ Attr.style "display" "flex"
-                            , Attr.style "flex-direction" "column"
-                            , Attr.style "gap" "12px"
-                            ]
-                            [ viewLiveBadge lang config.liveViewerCount
-                            , viewQrCode lang fullUrl
-                            , viewCopyButton lang model.copied config.onCopyUrl
-                            , viewBroadcastButton lang True config.onToggleBroadcast
-                            ]
-
-                    else
-                        div
-                            [ Attr.style "display" "flex"
-                            , Attr.style "flex-direction" "column"
-                            , Attr.style "gap" "12px"
-                            , Attr.style "padding" "6px 0"
-                            ]
-                            [ viewBroadcastButton lang False config.onToggleBroadcast ]
-
-                  else
-                    div
-                        [ Attr.style "display" "flex"
+                    [ div
+                        [ Attr.attribute "role" "radiogroup"
+                        , Attr.attribute "aria-label" (I18n.shareModalTitle lang)
+                        , Attr.style "display" "flex"
                         , Attr.style "flex-direction" "column"
-                        , Attr.style "gap" "12px"
+                        , Attr.style "gap" "8px"
                         ]
-                        [ viewReverseToggle lang model.reverseSharing config.onToggleReverseSharing
-                        , if model.reverseSharing then
-                            div
-                                [ Attr.style "display" "flex"
-                                , Attr.style "flex-direction" "column"
-                                , Attr.style "gap" "12px"
-                                ]
-                                [ viewParticipantCard lang config model
-                                , viewHostCard lang config model
-                                ]
+                        (List.map (viewRadioCard lang model.selected config.onSelectKind) kinds)
+                    , if isReverseSharingApplicable model.selected then
+                        viewReverseToggle lang model.reverseSharing config.onToggleReverseSharing
 
-                          else
-                            div
-                                [ Attr.style "display" "flex"
-                                , Attr.style "flex-direction" "column"
-                                , Attr.style "gap" "12px"
-                                ]
-                                [ viewQrCode lang fullUrl
-                                , viewCopyButton lang model.copied config.onCopyUrl
-                                ]
-                        ]
+                      else
+                        text ""
+                    ]
+                , -- Right column: Link cards, action buttons, QR code, live broadcast controls
+                  div
+                    [ Attr.attribute "data-testid" "share-modal-right-column"
+                    , Attr.style "display" "flex"
+                    , Attr.style "flex-direction" "column"
+                    , Attr.style "gap" "12px"
+                    ]
+                    (viewRightColumn lang config model fullUrl)
                 ]
             ]
         ]
+
+
+shareShowQr : Language -> String
+shareShowQr lang =
+    case lang of
+        Fi ->
+            "Näytä QR-koodi"
+
+        En ->
+            "Show QR code"
+
+
+shareHideQr : Language -> String
+shareHideQr lang =
+    case lang of
+        Fi ->
+            "Piilota QR-koodi"
+
+        En ->
+            "Hide QR code"
+
+
+canGenerateQr : String -> Bool
+canGenerateQr url =
+    case QRCode.fromString url of
+        Ok _ ->
+            True
+
+        Err _ ->
+            False
+
+
+viewQrToggleCustom : Language -> Bool -> msg -> String -> Html msg
+viewQrToggleCustom lang showQr onToggle testId =
+    button
+        [ Attr.type_ "button"
+        , Attr.attribute "data-testid" testId
+        , Attr.attribute "aria-expanded"
+            (if showQr then
+                "true"
+
+             else
+                "false"
+            )
+        , Html.Events.onClick onToggle
+        , Attr.class "qr-toggle-mobile"
+        , Attr.style "min-height" "44px"
+        , Attr.style "width" "100%"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "gap" "8px"
+        , Attr.style "padding" "8px 14px"
+        , Attr.style "border-radius" "8px"
+        , Attr.style "font-weight" "600"
+        , Attr.style "font-size" "13px"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+        , Attr.style "background" Theme.panelSubtleBackground
+        , Attr.style "color" Theme.textPrimary
+        , Attr.style "transition" "background-color 0.15s ease, border-color 0.15s ease"
+        ]
+        [ Icon.feather
+            (if showQr then
+                "chevron-up"
+
+             else
+                "chevron-down"
+            )
+        , text
+            (if showQr then
+                shareHideQr lang
+
+             else
+                shareShowQr lang
+            )
+        ]
+
+
+viewQrToggle : Language -> Bool -> msg -> Html msg
+viewQrToggle lang showQr onToggle =
+    viewQrToggleCustom lang showQr onToggle "share-qr-toggle"
+
+
+viewRightColumn : Language -> Config msg -> Model -> String -> List (Html msg)
+viewRightColumn lang config model fullUrl =
+    if model.selected == LivePreview then
+        if config.liveBroadcasting then
+            let
+                hasQr =
+                    canGenerateQr fullUrl
+            in
+            [ viewLiveBadge lang config.liveViewerCount ]
+                ++ (if hasQr then
+                        [ viewQrToggle lang model.showQr config.onToggleQr
+                        , viewQrCode lang fullUrl model.showQr
+                        ]
+
+                    else
+                        []
+                   )
+                ++ [ viewCopyButton lang model.copied config.onCopyUrl
+                   , viewBroadcastButton lang True config.onToggleBroadcast
+                   ]
+
+        else
+            [ div
+                [ Attr.style "display" "flex"
+                , Attr.style "flex-direction" "column"
+                , Attr.style "gap" "12px"
+                , Attr.style "padding" "6px 0"
+                ]
+                [ viewBroadcastButton lang False config.onToggleBroadcast ]
+            ]
+
+    else if model.reverseSharing then
+        [ viewParticipantCard lang config model
+        , viewHostCard lang config model
+        ]
+
+    else
+        let
+            hasQr =
+                canGenerateQr fullUrl
+        in
+        (if hasQr then
+            [ viewQrToggle lang model.showQr config.onToggleQr
+            , viewQrCode lang fullUrl model.showQr
+            ]
+
+         else
+            []
+        )
+            ++ [ viewCopyButton lang model.copied config.onCopyUrl ]
 
 
 viewLiveBadge : Language -> Int -> Html msg
@@ -825,12 +943,19 @@ viewRadioCard lang currentSelected onSelect kind =
         ]
 
 
-viewQrCode : Language -> String -> Html msg
-viewQrCode lang url =
+viewQrCode : Language -> String -> Bool -> Html msg
+viewQrCode lang url showQr =
     case QRCode.fromString url of
         Ok qrCode ->
             div
                 [ Attr.attribute "data-testid" "share-qr-container"
+                , Attr.class
+                    (if showQr then
+                        ""
+
+                     else
+                        "qr-container-collapsed"
+                    )
                 , Attr.style "display" "flex"
                 , Attr.style "flex-direction" "column"
                 , Attr.style "align-items" "center"
@@ -1126,7 +1251,18 @@ viewParticipantCard lang config model =
             )
             config.onCopyParticipantUrl
             "copy-participant-url"
-        , viewParticipantQrCode lang participantUrl
+        , if canGenerateQr participantUrl then
+            div
+                [ Attr.style "display" "flex"
+                , Attr.style "flex-direction" "column"
+                , Attr.style "gap" "8px"
+                ]
+                [ viewQrToggleCustom lang model.showQr config.onToggleQr "participant-qr-toggle"
+                , viewParticipantQrCode lang participantUrl model.showQr
+                ]
+
+          else
+            text ""
         ]
 
 
@@ -1254,12 +1390,19 @@ viewHostCard lang config model =
         ]
 
 
-viewParticipantQrCode : Language -> String -> Html msg
-viewParticipantQrCode lang url =
+viewParticipantQrCode : Language -> String -> Bool -> Html msg
+viewParticipantQrCode lang url showQr =
     case QRCode.fromString url of
         Ok qrCode ->
             div
                 [ Attr.attribute "data-testid" "participant-qr-container"
+                , Attr.class
+                    (if showQr then
+                        ""
+
+                     else
+                        "qr-container-collapsed"
+                    )
                 , Attr.style "display" "flex"
                 , Attr.style "flex-direction" "column"
                 , Attr.style "align-items" "center"

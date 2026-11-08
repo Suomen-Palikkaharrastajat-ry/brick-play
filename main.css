@@ -48,3 +48,49 @@
 .palette-scroll-y::-webkit-scrollbar {
   display: none;
 }
+
+/* Share dialog 2-column desktop and responsive layout */
+.share-modal-card {
+  max-width: min(380px, calc(100vw - 24px));
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .share-modal-card {
+    max-width: min(720px, calc(100vw - 32px)) !important;
+  }
+}
+
+.share-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .share-modal-body {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px !important;
+    align-items: start;
+  }
+}
+
+/* Mobile QR code toggle: shown on mobile, hidden on desktop */
+.qr-toggle-mobile {
+  display: inline-flex !important;
+}
+
+@media (min-width: 640px) {
+  .qr-toggle-mobile {
+    display: none !important;
+  }
+}
+
+/* Mobile QR container collapsing */
+@media (max-width: 639.98px) {
+  .qr-container-collapsed {
+    display: none !important;
+  }
+}
+
