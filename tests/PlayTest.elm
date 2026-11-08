@@ -949,18 +949,31 @@ reverseParticipantTests : Test
 reverseParticipantTests =
     describe "Reverse Sharing participant builder integration"
         [ describe "parseReverseParticipantRoom"
-            [ test "parses valid roomId from #/reverse/:roomId/b/:base64url" <|
+            [ test "parses valid roomId from #/join/:roomId/b/:base64url" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/join/ROOM123/b/eJxL")
+            , test "normalizes lowercase room ID to uppercase with /join/" <|
+                \_ ->
+                    Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/join/abcd789/b/xyz")
+            , test "parses legacy roomId from #/reverse/:roomId/b/:base64url for backwards compatibility" <|
                 \_ ->
                     Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/reverse/ROOM123/b/eJxL")
-            , test "normalizes lowercase room ID to uppercase" <|
+            , test "normalizes lowercase room ID to uppercase with legacy /reverse/" <|
                 \_ ->
                     Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/reverse/abcd789/b/xyz")
-            , test "parses hash without leading slash" <|
+            , test "parses join hash without leading slash" <|
+                \_ ->
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "join/ROOM123/b/eJxL")
+            , test "parses legacy reverse hash without leading slash" <|
                 \_ ->
                     Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "reverse/ROOM123/b/eJxL")
             , test "rejects empty room ID" <|
                 \_ ->
-                    Expect.equal Nothing (parseReverseParticipantRoom "#/reverse//b/xyz")
+                    Expect.all
+                        [ \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/join//b/xyz")
+                        , \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/reverse//b/xyz")
+                        ]
+                        ()
             , test "rejects non-reverse paths" <|
                 \_ ->
                     Expect.all
@@ -994,6 +1007,16 @@ reverseParticipantTests =
                     , \_ -> Expect.notEqual Cmd.none cmd
                     ]
                     model
+        , test "init decodes legacy #/reverse/ participant URL for backwards compatibility" <|
+            \_ ->
+                let
+                    legacyUrl =
+                        "https://example.com/play/#/reverse/LEGACY1/b/eJxLzUtVsgZAAQ4A7g=="
+
+                    ( model, _ ) =
+                        init { testFlags | initialHash = legacyUrl }
+                in
+                Expect.equal (Just "LEGACY1") model.reverseParticipantRoom
         , test "header toolbar renders reverse participant badge" <|
             \_ ->
                 let
@@ -1725,13 +1748,13 @@ shareModalTests =
                 Expect.all
                     [ \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantPartsUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantPartsUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantFixedUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantFixedUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/reverse/7K9P2X4/b/" participantFreeUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantFreeUrl)
                     , \_ ->
                         Expect.equal "https://palikkaharrastajat.fi/play/#/grid/7K9P2X4" hostUrl
                     ]
@@ -1791,6 +1814,61 @@ shareModalTests =
 
                             Nothing ->
                                 Expect.fail "Share modal was not open"
+                    ]
+                    ()
+        , test "Reverse sharing toggle renders 'Rinnakkaileikki' in Finnish" <|
+            \_ ->
+                let
+                    ( modelOpenFi, _ ) =
+                        init { testFlags | language = Just "fi" } |> Tuple.first |> update OpenShareModal
+                in
+                Query.fromHtml (view modelOpenFi)
+                    |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
+                    |> Query.has [ Selector.text "Rinnakkaileikki" ]
+        , test "Square copy buttons render accessible aria-label and title attributes with state updates" <|
+            \_ ->
+                let
+                    ( modelOpenFi, _ ) =
+                        init { testFlags | language = Just "fi" } |> Tuple.first |> update OpenShareModal
+
+                    ( reverseActiveFi, _ ) =
+                        update ToggleReverseSharing modelOpenFi
+
+                    ( copiedParticipantFi, _ ) =
+                        update CopyParticipantUrl reverseActiveFi
+
+                    ( copiedHostFi, _ ) =
+                        update CopyHostUrl reverseActiveFi
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view reverseActiveFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-participant-url") ]
+                            |> Query.has
+                                [ Selector.attribute (Attr.attribute "aria-label" "Kopioi linkki")
+                                , Selector.attribute (Attr.attribute "title" "Kopioi linkki")
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view reverseActiveFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-host-url") ]
+                            |> Query.has
+                                [ Selector.attribute (Attr.attribute "aria-label" "Kopioi ruudukkolinkki")
+                                , Selector.attribute (Attr.attribute "title" "Kopioi ruudukkolinkki")
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view copiedParticipantFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-participant-url") ]
+                            |> Query.has
+                                [ Selector.attribute (Attr.attribute "aria-label" "Kopioitu!")
+                                , Selector.attribute (Attr.attribute "title" "Kopioitu!")
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view copiedHostFi)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "copy-host-url") ]
+                            |> Query.has
+                                [ Selector.attribute (Attr.attribute "aria-label" "Kopioitu!")
+                                , Selector.attribute (Attr.attribute "title" "Kopioitu!")
+                                ]
                     ]
                     ()
         , test "Two-column desktop layout divides selectors and actions" <|

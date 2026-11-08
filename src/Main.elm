@@ -489,7 +489,7 @@ extractFragment hash =
             hash
 
 
-{-| Parse room ID from #/reverse/:roomId/b/:base64url
+{-| Parse room ID from #/join/:roomId/b/:base64url (or legacy #/reverse/:roomId/b/:base64url)
 -}
 parseReverseParticipantRoom : String -> Maybe String
 parseReverseParticipantRoom hash =
@@ -505,7 +505,7 @@ parseReverseParticipantRoom hash =
             else
                 clean
     in
-    if String.startsWith "reverse/" stripped then
+    if String.startsWith "join/" stripped || String.startsWith "reverse/" stripped then
         case String.split "/" stripped of
             _ :: roomId :: _ ->
                 if String.isEmpty roomId then
@@ -521,7 +521,7 @@ parseReverseParticipantRoom hash =
         Nothing
 
 
-{-| Extract the base64url payload string from #/reverse/:roomId/b/:base64url
+{-| Extract the base64url payload string from #/join/:roomId/b/:base64url (or legacy #/reverse/:roomId/b/:base64url)
 -}
 parseReverseParticipantBase64 : String -> Maybe String
 parseReverseParticipantBase64 hash =
@@ -537,7 +537,7 @@ parseReverseParticipantBase64 hash =
             else
                 clean
     in
-    if String.startsWith "reverse/" stripped then
+    if String.startsWith "join/" stripped || String.startsWith "reverse/" stripped then
         case String.split "/" stripped of
             _ :: _ :: "b" :: rest ->
                 let

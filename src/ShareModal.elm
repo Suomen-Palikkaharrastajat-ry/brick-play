@@ -344,7 +344,7 @@ cleanBaseUrl baseUrl =
 
 
 {-| Compute the participant URL for reverse sharing:
-`${baseUrl}#/reverse/${roomId}/b/${base64url}`
+`${baseUrl}#/join/${roomId}/b/${base64url}`
 -}
 computeReverseParticipantUrl : String -> String -> ShareKind -> Bool -> Document -> List KitItem -> String
 computeReverseParticipantUrl baseUrl roomId kind free doc inventory =
@@ -355,7 +355,7 @@ computeReverseParticipantUrl baseUrl roomId kind free doc inventory =
         b64 =
             computeBase64 kind free doc inventory
     in
-    clean ++ "#/reverse/" ++ roomId ++ "/b/" ++ b64
+    clean ++ "#/join/" ++ roomId ++ "/b/" ++ b64
 
 
 {-| Compute the host grid URL for reverse sharing:
@@ -994,6 +994,65 @@ viewQrCode lang url showQr =
             text ""
 
 
+viewSquareCopyButton : Bool -> String -> String -> msg -> String -> Html msg
+viewSquareCopyButton copied normalTitle copiedTitle onCopy testId =
+    button
+        [ Attr.type_ "button"
+        , Attr.attribute "data-testid" testId
+        , Attr.attribute "aria-label"
+            (if copied then
+                copiedTitle
+
+             else
+                normalTitle
+            )
+        , Attr.title
+            (if copied then
+                copiedTitle
+
+             else
+                normalTitle
+            )
+        , Html.Events.onClick onCopy
+        , Attr.style "width" "34px"
+        , Attr.style "height" "34px"
+        , Attr.style "display" "inline-flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "justify-content" "center"
+        , Attr.style "flex-shrink" "0"
+        , Attr.style "border-radius" "6px"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "border"
+            (if copied then
+                "1px solid #10b981"
+
+             else
+                "1px solid " ++ Theme.borderDefault
+            )
+        , Attr.style "background"
+            (if copied then
+                "#10b981"
+
+             else
+                Theme.panelSurface
+            )
+        , Attr.style "color"
+            (if copied then
+                "#ffffff"
+
+             else
+                Theme.textPrimary
+            )
+        , Attr.style "box-sizing" "border-box"
+        ]
+        [ if copied then
+            Icon.feather "check"
+
+          else
+            Icon.feather "copy"
+        ]
+
+
 viewCopyButtonCustom : Bool -> String -> String -> msg -> String -> Html msg
 viewCopyButtonCustom copied normalText copiedText onCopy testId =
     button
@@ -1143,7 +1202,7 @@ viewReverseToggle lang isReverse onToggle =
                 [ text
                     (case lang of
                         Fi ->
-                            "Käänteinen jakaminen (palikkaleikkikenttä)"
+                            "Rinnakkaileikki"
 
                         En ->
                             "Reverse sharing (participant grid)"
@@ -1177,7 +1236,7 @@ viewParticipantCard lang config model =
         [ Attr.attribute "data-testid" "reverse-participant-card"
         , Attr.style "display" "flex"
         , Attr.style "flex-direction" "column"
-        , Attr.style "gap" "10px"
+        , Attr.style "gap" "8px"
         , Attr.style "padding" "12px"
         , Attr.style "border-radius" "8px"
         , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
@@ -1217,40 +1276,48 @@ viewParticipantCard lang config model =
                     )
                 ]
             ]
-        , Html.input
-            [ Attr.type_ "text"
-            , Attr.readonly True
-            , Attr.value participantUrl
-            , Attr.attribute "data-testid" "participant-url-field"
-            , Attr.style "width" "100%"
-            , Attr.style "padding" "8px 10px"
-            , Attr.style "border-radius" "6px"
-            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
-            , Attr.style "background" Theme.panelSurface
-            , Attr.style "color" Theme.textPrimary
-            , Attr.style "font-size" "11px"
-            , Attr.style "font-family" "monospace"
-            , Attr.style "box-sizing" "border-box"
+        , div
+            [ Attr.style "display" "flex"
+            , Attr.style "gap" "6px"
+            , Attr.style "align-items" "center"
             ]
-            []
-        , viewCopyButtonCustom
-            model.copiedParticipant
-            (case lang of
-                Fi ->
-                    "Kopioi linkki"
+            [ Html.input
+                [ Attr.type_ "text"
+                , Attr.readonly True
+                , Attr.value participantUrl
+                , Attr.attribute "data-testid" "participant-url-field"
+                , Attr.style "flex" "1"
+                , Attr.style "min-width" "0"
+                , Attr.style "height" "34px"
+                , Attr.style "padding" "0 10px"
+                , Attr.style "border-radius" "6px"
+                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+                , Attr.style "background" Theme.panelSurface
+                , Attr.style "color" Theme.textPrimary
+                , Attr.style "font-size" "11px"
+                , Attr.style "font-family" "monospace"
+                , Attr.style "box-sizing" "border-box"
+                ]
+                []
+            , viewSquareCopyButton
+                model.copiedParticipant
+                (case lang of
+                    Fi ->
+                        "Kopioi linkki"
 
-                En ->
-                    "Copy link"
-            )
-            (case lang of
-                Fi ->
-                    "Kopioitu!"
+                    En ->
+                        "Copy link"
+                )
+                (case lang of
+                    Fi ->
+                        "Kopioitu!"
 
-                En ->
-                    "Copied!"
-            )
-            config.onCopyParticipantUrl
-            "copy-participant-url"
+                    En ->
+                        "Copied!"
+                )
+                config.onCopyParticipantUrl
+                "copy-participant-url"
+            ]
         , if canGenerateQr participantUrl then
             div
                 [ Attr.style "display" "flex"
@@ -1276,7 +1343,7 @@ viewHostCard lang config model =
         [ Attr.attribute "data-testid" "reverse-host-card"
         , Attr.style "display" "flex"
         , Attr.style "flex-direction" "column"
-        , Attr.style "gap" "10px"
+        , Attr.style "gap" "8px"
         , Attr.style "padding" "12px"
         , Attr.style "border-radius" "8px"
         , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
@@ -1316,28 +1383,30 @@ viewHostCard lang config model =
                     )
                 ]
             ]
-        , Html.input
-            [ Attr.type_ "text"
-            , Attr.readonly True
-            , Attr.value hostUrl
-            , Attr.attribute "data-testid" "host-url-field"
-            , Attr.style "width" "100%"
-            , Attr.style "padding" "8px 10px"
-            , Attr.style "border-radius" "6px"
-            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
-            , Attr.style "background" Theme.panelSurface
-            , Attr.style "color" Theme.textPrimary
-            , Attr.style "font-size" "11px"
-            , Attr.style "font-family" "monospace"
-            , Attr.style "box-sizing" "border-box"
-            ]
-            []
         , div
             [ Attr.style "display" "flex"
-            , Attr.style "flex-direction" "column"
-            , Attr.style "gap" "8px"
+            , Attr.style "gap" "6px"
+            , Attr.style "align-items" "center"
             ]
-            [ viewCopyButtonCustom
+            [ Html.input
+                [ Attr.type_ "text"
+                , Attr.readonly True
+                , Attr.value hostUrl
+                , Attr.attribute "data-testid" "host-url-field"
+                , Attr.style "flex" "1"
+                , Attr.style "min-width" "0"
+                , Attr.style "height" "34px"
+                , Attr.style "padding" "0 10px"
+                , Attr.style "border-radius" "6px"
+                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+                , Attr.style "background" Theme.panelSurface
+                , Attr.style "color" Theme.textPrimary
+                , Attr.style "font-size" "11px"
+                , Attr.style "font-family" "monospace"
+                , Attr.style "box-sizing" "border-box"
+                ]
+                []
+            , viewSquareCopyButton
                 model.copiedHost
                 (case lang of
                     Fi ->
@@ -1355,37 +1424,37 @@ viewHostCard lang config model =
                 )
                 config.onCopyHostUrl
                 "copy-host-url"
-            , Html.a
-                [ Attr.href hostUrl
-                , Attr.target "_blank"
-                , Attr.rel "noopener noreferrer"
-                , Attr.attribute "data-testid" "open-host-grid"
-                , Attr.style "min-height" "44px"
-                , Attr.style "width" "100%"
-                , Attr.style "display" "inline-flex"
-                , Attr.style "align-items" "center"
-                , Attr.style "justify-content" "center"
-                , Attr.style "gap" "8px"
-                , Attr.style "padding" "10px 16px"
-                , Attr.style "border-radius" "8px"
-                , Attr.style "font-weight" "600"
-                , Attr.style "font-size" "13px"
-                , Attr.style "text-decoration" "none"
-                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
-                , Attr.style "background" Theme.panelSurface
-                , Attr.style "color" Theme.textPrimary
-                , Attr.style "box-sizing" "border-box"
-                ]
-                [ Icon.feather "grid"
-                , text
-                    (case lang of
-                        Fi ->
-                            "Avaa ruudukko"
+            ]
+        , Html.a
+            [ Attr.href hostUrl
+            , Attr.target "_blank"
+            , Attr.rel "noopener noreferrer"
+            , Attr.attribute "data-testid" "open-host-grid"
+            , Attr.style "min-height" "36px"
+            , Attr.style "width" "100%"
+            , Attr.style "display" "inline-flex"
+            , Attr.style "align-items" "center"
+            , Attr.style "justify-content" "center"
+            , Attr.style "gap" "8px"
+            , Attr.style "padding" "8px 14px"
+            , Attr.style "border-radius" "6px"
+            , Attr.style "font-weight" "600"
+            , Attr.style "font-size" "12px"
+            , Attr.style "text-decoration" "none"
+            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+            , Attr.style "background" Theme.panelSurface
+            , Attr.style "color" Theme.textPrimary
+            , Attr.style "box-sizing" "border-box"
+            ]
+            [ Icon.feather "grid"
+            , text
+                (case lang of
+                    Fi ->
+                        "Avaa ruudukko"
 
-                        En ->
-                            "Open grid"
-                    )
-                ]
+                    En ->
+                        "Open grid"
+                )
             ]
         ]
 
