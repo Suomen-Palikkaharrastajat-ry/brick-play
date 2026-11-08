@@ -94,8 +94,7 @@ entriesFor tab =
         PlatesTab ->
             [ entry "3024.dat" "Plate 1 x 1" "1 x 1 plate"
             , entry "3023b.dat" "Plate 1 x 2" "1 x 2 plate"
-            , entry "3794b.dat" "Plate 1 x 2 with 1 Stud" "1 x 2 jumper plate"
-            , entry "15573.dat" "Plate 1 x 2 with 1 Stud without Understud" "1 x 2 jumper plate without understud"
+            , entry "15573.dat" "Plate 1 x 2 with 1 Stud" "1 x 2 jumper plate"
             , entry "3710.dat" "Plate 1 x 4" "1 x 4 plate"
             , entry "3666.dat" "Plate 1 x 6" "1 x 6 plate"
             , entry "3460.dat" "Plate 1 x 8" "1 x 8 plate"
