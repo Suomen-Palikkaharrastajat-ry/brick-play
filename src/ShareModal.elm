@@ -1371,7 +1371,7 @@ viewHostCard lang config model =
                 [ text
                     (case lang of
                         Fi ->
-                            "Palikkaleikkikenttä"
+                            "Ohjaajan linkki"
 
                         En ->
                             "Host grid link"

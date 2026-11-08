@@ -1871,6 +1871,22 @@ shareModalTests =
                                 ]
                     ]
                     ()
+        , test "Reverse sharing cards render 'Osallistujan linkki' and 'Ohjaajan linkki' in Finnish" <|
+            \_ ->
+                let
+                    ( modelOpenFi, _ ) =
+                        init { testFlags | language = Just "fi" } |> Tuple.first |> update OpenShareModal
+
+                    ( reverseActiveFi, _ ) =
+                        update ToggleReverseSharing modelOpenFi
+                in
+                Query.fromHtml (view reverseActiveFi)
+                    |> Expect.all
+                        [ Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-participant-card") ]
+                            >> Query.has [ Selector.text "Osallistujan linkki" ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-host-card") ]
+                            >> Query.has [ Selector.text "Ohjaajan linkki" ]
+                        ]
         , test "Two-column desktop layout divides selectors and actions" <|
             \_ ->
                 let
