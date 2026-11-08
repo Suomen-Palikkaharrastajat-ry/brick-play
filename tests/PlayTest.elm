@@ -40,6 +40,7 @@ import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector
+import Time
 import UI.CameraGlobe as CameraGlobe
 import UI.SnapshotModal as SnapshotModal
 import Url
@@ -949,29 +950,23 @@ reverseParticipantTests : Test
 reverseParticipantTests =
     describe "Reverse Sharing participant builder integration"
         [ describe "parseReverseParticipantRoom"
-            [ test "parses valid roomId from #/join/:roomId/b/:base64url" <|
+            [ test "parses valid roomId from #/play/:roomId/b/:base64url" <|
                 \_ ->
-                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/join/ROOM123/b/eJxL")
-            , test "normalizes lowercase room ID to uppercase with /join/" <|
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/play/ROOM123/b/eJxL")
+            , test "normalizes lowercase room ID to uppercase with /play/" <|
                 \_ ->
-                    Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/join/abcd789/b/xyz")
-            , test "parses legacy roomId from #/reverse/:roomId/b/:base64url for backwards compatibility" <|
+                    Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/play/abcd789/b/xyz")
+            , test "parses play hash without leading slash" <|
                 \_ ->
-                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "#/reverse/ROOM123/b/eJxL")
-            , test "normalizes lowercase room ID to uppercase with legacy /reverse/" <|
-                \_ ->
-                    Expect.equal (Just "ABCD789") (parseReverseParticipantRoom "#/reverse/abcd789/b/xyz")
-            , test "parses join hash without leading slash" <|
-                \_ ->
-                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "join/ROOM123/b/eJxL")
-            , test "parses legacy reverse hash without leading slash" <|
-                \_ ->
-                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "reverse/ROOM123/b/eJxL")
+                    Expect.equal (Just "ROOM123") (parseReverseParticipantRoom "play/ROOM123/b/eJxL")
             , test "rejects empty room ID" <|
                 \_ ->
+                    Expect.equal Nothing (parseReverseParticipantRoom "#/play//b/xyz")
+            , test "rejects legacy /join/ and /reverse/ paths without backwards compatibility" <|
+                \_ ->
                     Expect.all
-                        [ \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/join//b/xyz")
-                        , \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/reverse//b/xyz")
+                        [ \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/join/ROOM123/b/eJxL")
+                        , \_ -> Expect.equal Nothing (parseReverseParticipantRoom "#/reverse/ROOM123/b/eJxL")
                         ]
                         ()
             , test "rejects non-reverse paths" <|
@@ -1007,7 +1002,7 @@ reverseParticipantTests =
                     , \_ -> Expect.notEqual Cmd.none cmd
                     ]
                     model
-        , test "init decodes legacy #/reverse/ participant URL for backwards compatibility" <|
+        , test "init rejects legacy /reverse/ participant URL without backwards compatibility" <|
             \_ ->
                 let
                     legacyUrl =
@@ -1016,7 +1011,7 @@ reverseParticipantTests =
                     ( model, _ ) =
                         init { testFlags | initialHash = legacyUrl }
                 in
-                Expect.equal (Just "LEGACY1") model.reverseParticipantRoom
+                Expect.equal Nothing model.reverseParticipantRoom
         , test "header toolbar renders reverse participant badge" <|
             \_ ->
                 let
@@ -1250,6 +1245,164 @@ reverseHostTests =
                         Query.fromHtml (view model2)
                             |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
                             |> Query.has [ Selector.class "bg-amber-400" ]
+                    ]
+                    ()
+        , test "disconnected participant dims after 30 seconds and is removed after another 30 seconds (1 minute total)" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 3
+                                , lastSeen = 100000
+                                }
+                            )
+                            model0
+
+                    -- Disconnect at t = 100000
+                    ( modelLeft, _ ) =
+                        update (ReverseParticipantLeft "viewer-1") model1
+
+                    -- At t = 120000 (20 seconds disconnected): disconnected, but not dimmed
+                    ( model20s, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 120000)) modelLeft
+
+                    -- At t = 131000 (31 seconds disconnected): dimmed
+                    ( model31s, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 131000)) model20s
+
+                    -- At t = 161000 (61 seconds disconnected): removed (autocleaned)
+                    ( model61s, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 161000)) model31s
+                in
+                Expect.all
+                    [ \_ ->
+                        -- 20s: present, disconnected, data-dimmed="false"
+                        Query.fromHtml (view model20s)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-dimmed" "false") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-status" "disconnected") ]
+                                ]
+                    , \_ ->
+                        -- 31s: present, dimmed with data-dimmed="true" and opacity-40
+                        Query.fromHtml (view model31s)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-dimmed" "true") ]
+                                , Query.has [ Selector.class "opacity-40" ]
+                                ]
+                    , \_ ->
+                        -- 61s: removed from participants Dict and no card rendered
+                        Expect.equal False (Dict.member "viewer-1" model61s.participants)
+                    , \_ ->
+                        Query.fromHtml (view model61s)
+                            |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                    ]
+                    ()
+        , test "reconnecting participant resets disconnected state and cancels dimming and removal" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 3
+                                , lastSeen = 100000
+                                }
+                            )
+                            model0
+
+                    ( modelLeft, _ ) =
+                        update (ReverseParticipantLeft "viewer-1") model1
+
+                    -- At 35s disconnected: dimmed
+                    ( model35s, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 135000)) modelLeft
+
+                    -- Participant reconnects and sends update at 40s
+                    ( modelReconnected, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 4
+                                , lastSeen = 140000
+                                }
+                            )
+                            model35s
+
+                    -- At 65s (original timeout): should still be present because they reconnected
+                    ( model65s, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 165000)) modelReconnected
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view model35s)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-dimmed" "true") ]
+                    , \_ ->
+                        Query.fromHtml (view modelReconnected)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-dimmed" "false") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "data-status" "connected") ]
+                                ]
+                    , \_ ->
+                        Expect.equal True (Dict.member "viewer-1" model65s.participants)
+                    ]
+                    ()
+        , test "inspecting participant resets to grid when participant is autocleaned after 60 seconds" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 2
+                                , lastSeen = 100000
+                                }
+                            )
+                            model0
+
+                    ( modelInspecting, _ ) =
+                        update (InspectParticipant (Just "viewer-1")) model1
+
+                    ( modelLeft, _ ) =
+                        update (ReverseParticipantLeft "viewer-1") modelInspecting
+
+                    -- 61s after disconnect: participant is autocleaned
+                    ( modelCleaned, _ ) =
+                        update (ReverseHostTick (Time.millisToPosix 161000)) modelLeft
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal (Just "viewer-1") modelInspecting.inspectedParticipant
+                    , \_ ->
+                        Expect.equal Nothing modelCleaned.inspectedParticipant
+                    , \_ ->
+                        Expect.equal False (Dict.member "viewer-1" modelCleaned.participants)
                     ]
                     ()
         , test "switching between grid view and 3D inspector via InspectParticipant" <|
@@ -1748,13 +1901,13 @@ shareModalTests =
                 Expect.all
                     [ \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantPartsUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantPartsUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantFixedUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantFixedUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/join/7K9P2X4/b/" participantFreeUrl)
+                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantFreeUrl)
                     , \_ ->
                         Expect.equal "https://palikkaharrastajat.fi/play/#/grid/7K9P2X4" hostUrl
                     ]

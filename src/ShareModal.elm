@@ -348,7 +348,7 @@ cleanBaseUrl baseUrl =
 
 
 {-| Compute the participant URL for reverse sharing:
-`${baseUrl}#/join/${roomId}/b/${base64url}`
+`${baseUrl}#/play/${roomId}/b/${base64url}`
 -}
 computeReverseParticipantUrl : String -> String -> ShareKind -> Bool -> Document -> List KitItem -> String
 computeReverseParticipantUrl baseUrl roomId kind free doc inventory =
@@ -359,7 +359,7 @@ computeReverseParticipantUrl baseUrl roomId kind free doc inventory =
         b64 =
             computeBase64 kind free doc inventory
     in
-    clean ++ "#/join/" ++ roomId ++ "/b/" ++ b64
+    clean ++ "#/play/" ++ roomId ++ "/b/" ++ b64
 
 
 {-| Compute the host grid URL for reverse sharing:

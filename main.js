@@ -75,23 +75,12 @@ window.addEventListener(
 )
 
 let initialHash = window.location.hash ?? ''
-if (/^#\/reverse\//i.test(initialHash)) {
-  const redirectedHash = initialHash.replace(/^#\/reverse\//i, '#/join/')
-  window.history.replaceState(null, '', redirectedHash)
-  initialHash = redirectedHash
-}
-
-window.addEventListener('hashchange', () => {
-  if (/^#\/reverse\//i.test(window.location.hash)) {
-    window.history.replaceState(null, '', window.location.hash.replace(/^#\/reverse\//i, '#/join/'))
-  }
-})
 
 const watchMatch = initialHash.match(/^#\/(?:watch|live)\/([A-Za-z0-9]{4,16})/i)
 const isViewer = Boolean(watchMatch)
 const viewerRoomId = watchMatch ? watchMatch[1].toUpperCase() : null
 
-const reverseParticipantMatch = initialHash.match(/^#\/(?:join|reverse)\/([A-Za-z0-9]{4,16})\/b\/(.+)/i)
+const reverseParticipantMatch = initialHash.match(/^#\/play\/([A-Za-z0-9]{4,16})\/b\/(.+)/i)
 const isReverseParticipant = Boolean(reverseParticipantMatch)
 const reverseRoomId = reverseParticipantMatch ? reverseParticipantMatch[1].toUpperCase() : null
 const modelHash = reverseParticipantMatch ? `#b/${reverseParticipantMatch[2]}` : null
@@ -346,7 +335,7 @@ if (isViewer && viewerRoomId) {
         hashFrame = null
         const uint8 = toUint8Array(payload)
         const b64 = encodeHash(uint8).replace(/^#b\//, '')
-        window.history.replaceState(null, '', `#/join/${reverseRoomId}/b/${b64}`)
+        window.history.replaceState(null, '', `#/play/${reverseRoomId}/b/${b64}`)
       }, 16)
     })
   }

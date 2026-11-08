@@ -11,6 +11,7 @@ module Main exposing
     , hashFor
     , helpRows
     , init
+    , isParticipantDimmed
     , kitItemName
     , main
     , parseReverseHostRoom
@@ -243,6 +244,7 @@ type alias Model =
     , reverseHostRoom : Maybe String
     , participants : Dict String Participant
     , inspectedParticipant : Maybe String
+    , nowMillis : Int
     }
 
 
@@ -256,6 +258,7 @@ type alias Participant =
     , brickCount : Int
     , lastSeen : Int
     , status : String
+    , disconnectedAt : Maybe Int
     }
 
 
@@ -432,6 +435,8 @@ type Msg
         , lastSeen : Int
         }
     | ReverseParticipantLeft String
+    | ReverseParticipantLeftAt String Int
+    | ReverseHostTick Time.Posix
     | InspectParticipant (Maybe String)
     | DismissToast Int
     | MenuPicked Msg
@@ -489,7 +494,7 @@ extractFragment hash =
             hash
 
 
-{-| Parse room ID from #/join/:roomId/b/:base64url (or legacy #/reverse/:roomId/b/:base64url)
+{-| Parse room ID from #/play/:roomId/b/:base64url
 -}
 parseReverseParticipantRoom : String -> Maybe String
 parseReverseParticipantRoom hash =
@@ -505,7 +510,7 @@ parseReverseParticipantRoom hash =
             else
                 clean
     in
-    if String.startsWith "join/" stripped || String.startsWith "reverse/" stripped then
+    if String.startsWith "play/" stripped then
         case String.split "/" stripped of
             _ :: roomId :: _ ->
                 if String.isEmpty roomId then
@@ -521,7 +526,7 @@ parseReverseParticipantRoom hash =
         Nothing
 
 
-{-| Extract the base64url payload string from #/join/:roomId/b/:base64url (or legacy #/reverse/:roomId/b/:base64url)
+{-| Extract the base64url payload string from #/play/:roomId/b/:base64url
 -}
 parseReverseParticipantBase64 : String -> Maybe String
 parseReverseParticipantBase64 hash =
@@ -537,7 +542,7 @@ parseReverseParticipantBase64 hash =
             else
                 clean
     in
-    if String.startsWith "join/" stripped || String.startsWith "reverse/" stripped then
+    if String.startsWith "play/" stripped then
         case String.split "/" stripped of
             _ :: _ :: "b" :: rest ->
                 let
@@ -880,6 +885,7 @@ init flags =
             , reverseHostRoom = rHostRoom
             , participants = Dict.empty
             , inspectedParticipant = Nothing
+            , nowMillis = 0
             }
 
         fetchViewportSize =
@@ -894,6 +900,13 @@ init flags =
                 ++ (case rRoom of
                         Just _ ->
                             [ pushReverseSnapshotFor initialModel ]
+
+                        Nothing ->
+                            []
+                   )
+                ++ (case rHostRoom of
+                        Just _ ->
+                            [ Task.perform ReverseHostTick Time.now ]
 
                         Nothing ->
                             []
@@ -2611,13 +2624,17 @@ step msg model =
                     , brickCount = data.brickCount
                     , lastSeen = data.lastSeen
                     , status = "connected"
+                    , disconnectedAt = Nothing
                     }
 
                 newParticipants =
                     Dict.insert data.id participant model.participants
 
                 newModel =
-                    { model | participants = newParticipants }
+                    { model
+                        | participants = newParticipants
+                        , nowMillis = max model.nowMillis data.lastSeen
+                    }
             in
             if model.inspectedParticipant == Just data.id then
                 case HashPayload.decodeBytes data.bytes of
@@ -2650,15 +2667,99 @@ step msg model =
             case Dict.get id model.participants of
                 Just p ->
                     let
+                        discTime =
+                            case p.disconnectedAt of
+                                Just t ->
+                                    t
+
+                                Nothing ->
+                                    if model.nowMillis > 0 then
+                                        model.nowMillis
+
+                                    else
+                                        p.lastSeen
+
                         updated =
-                            { p | status = "disconnected" }
+                            { p | status = "disconnected", disconnectedAt = Just discTime }
                     in
                     ( { model | participants = Dict.insert id updated model.participants }
+                    , case p.disconnectedAt of
+                        Just _ ->
+                            Cmd.none
+
+                        Nothing ->
+                            Task.perform (\posix -> ReverseParticipantLeftAt id (Time.posixToMillis posix)) Time.now
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ReverseParticipantLeftAt id now ->
+            case Dict.get id model.participants of
+                Just p ->
+                    let
+                        updated =
+                            { p | status = "disconnected", disconnectedAt = Just (Maybe.withDefault now p.disconnectedAt) }
+                    in
+                    ( { model
+                        | participants = Dict.insert id updated model.participants
+                        , nowMillis = max model.nowMillis now
+                      }
                     , Cmd.none
                     )
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        ReverseHostTick posix ->
+            let
+                now =
+                    Time.posixToMillis posix
+
+                updatedParticipants =
+                    Dict.foldl
+                        (\k p acc ->
+                            if p.status == "disconnected" then
+                                let
+                                    discAt =
+                                        case p.disconnectedAt of
+                                            Just t ->
+                                                t
+
+                                            Nothing ->
+                                                now
+                                in
+                                if now - discAt >= 60000 then
+                                    acc
+
+                                else
+                                    Dict.insert k { p | disconnectedAt = Just discAt } acc
+
+                            else
+                                Dict.insert k p acc
+                        )
+                        Dict.empty
+                        model.participants
+
+                newInspected =
+                    case model.inspectedParticipant of
+                        Just inspectedId ->
+                            if Dict.member inspectedId updatedParticipants then
+                                Just inspectedId
+
+                            else
+                                Nothing
+
+                        Nothing ->
+                            Nothing
+            in
+            ( { model
+                | nowMillis = now
+                , participants = updatedParticipants
+                , inspectedParticipant = newInspected
+              }
+            , Cmd.none
+            )
 
         InspectParticipant maybeId ->
             case maybeId of
@@ -3233,6 +3334,12 @@ subscriptions model =
         , Ports.reverseStatusChanged ReverseStatusChanged
         , Ports.reverseParticipantUpdated ReverseParticipantUpdated
         , Ports.reverseParticipantLeft ReverseParticipantLeft
+        , case model.reverseHostRoom of
+            Just _ ->
+                Time.every 1000 ReverseHostTick
+
+            Nothing ->
+                Sub.none
         , if model.playing then
             Browser.Events.onAnimationFrameDelta Tick
 
@@ -3515,7 +3622,7 @@ viewReverseGrid model roomId =
         badgeText =
             case model.language of
                 Fi ->
-                    "PALIKKALEIKKIKENTTÄ · " ++ roomId
+                    "PALIKKALEIKKI · " ++ roomId
 
                 En ->
                     "GRID STUDIO · " ++ roomId
@@ -3650,11 +3757,30 @@ viewGridParticipants model =
         (List.map (viewParticipantCard model) sortedParticipants)
 
 
+{-| Returns true if a disconnected participant has been disconnected for at least 30 seconds.
+-}
+isParticipantDimmed : Int -> Participant -> Bool
+isParticipantDimmed nowMillis p =
+    if p.status == "disconnected" then
+        case p.disconnectedAt of
+            Just discAt ->
+                nowMillis - discAt >= 30000
+
+            Nothing ->
+                False
+
+    else
+        False
+
+
 viewParticipantCard : Model -> Participant -> Html Msg
 viewParticipantCard model p =
     let
         isConnected =
             p.status == "connected"
+
+        isDimmed =
+            isParticipantDimmed model.nowMillis p
 
         brickCountLabel =
             case model.language of
@@ -3702,9 +3828,33 @@ viewParticipantCard model p =
     in
     div
         [ Attr.attribute "data-testid" "participant-card"
-        , Attr.class "relative flex flex-col overflow-hidden border transition"
+        , Attr.attribute "data-participant-id" p.id
+        , Attr.attribute "data-status" p.status
+        , Attr.attribute "data-dimmed"
+            (if isDimmed then
+                "true"
+
+             else
+                "false"
+            )
+        , Attr.class
+            ("relative flex flex-col overflow-hidden border transition duration-300 "
+                ++ (if isDimmed then
+                        "opacity-40"
+
+                    else
+                        "opacity-100"
+                   )
+            )
         , Attr.style "background" "var(--color-bg-dark)"
         , Attr.style "border-color" "rgba(255, 255, 255, 0.12)"
+        , Attr.style "opacity"
+            (if isDimmed then
+                "0.4"
+
+             else
+                "1"
+            )
         ]
         [ -- 2D Thumbnail or fallback
           div
