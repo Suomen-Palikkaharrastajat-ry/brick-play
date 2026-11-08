@@ -3471,7 +3471,12 @@ viewNormalBuilder model =
                 , Attr.style "z-index" "30"
                 , Attr.style "pointer-events" "none"
                 ]
-                [ ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp } ]
+                [ if model.coarsePointer || isNarrow model then
+                    ShortcutHelp.viewTouchWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp }
+
+                  else
+                    ShortcutHelp.viewWithLanguage model.language { rows = helpRows model, onClose = ToggleHelp }
+                ]
 
           else
             text ""
@@ -5596,16 +5601,24 @@ keepFocusOnCanvas =
     Focus.keepFocusOnCanvas NoOp
 
 
-{-| The shortcut list. The Machine section (Space and the gear rules) is listed
-only in Technic mode, where it applies.
+{-| The shortcut or touch controls list. The Machine section is listed only in
+Technic mode, where it applies. On touch devices or narrow screens, mobile/touch
+controls are shown instead of keyboard shortcuts.
 -}
 helpRows : Model -> List ( String, List ( String, String ) )
 helpRows model =
-    I18n.shortcutsHelpRows model.language
-        { free = model.free
-        , technic = technicMode model
-        , hasInventory = not (List.isEmpty model.inventory)
-        }
+    let
+        config =
+            { free = model.free
+            , technic = technicMode model
+            , hasInventory = not (List.isEmpty model.inventory)
+            }
+    in
+    if model.coarsePointer || isNarrow model then
+        I18n.touchHelpRows model.language config
+
+    else
+        I18n.shortcutsHelpRows model.language config
 
 
 {-| Play or pause the machine. Highlighted while it runs, like the old

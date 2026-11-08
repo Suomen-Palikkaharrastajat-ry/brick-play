@@ -1073,4 +1073,39 @@ helpTests =
                     |> List.map Tuple.first
                     |> List.member "Dock"
                     |> Expect.equal False
+        , test "on coarsePointer (touch device), helpRows lists touch controls instead of keyboard shortcuts" <|
+            \_ ->
+                let
+                    baseFlags =
+                        flagsFor ""
+
+                    touchModel =
+                        Tuple.first (init { baseFlags | coarsePointer = True })
+
+                    keys =
+                        rowKeys touchModel
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True (List.member "Double-tap a part" keys)
+                    , \_ -> Expect.equal True (List.member "Ring: Glue" keys)
+                    , \_ -> Expect.equal False (List.member "L  (ring: Glue)" keys)
+                    , \_ -> Expect.equal False (List.member "Ctrl + Z" keys)
+                    ]
+                    ()
+        , test "on a narrow mobile viewport, help dialog shows Touch controls title and touch rows" <|
+            \_ ->
+                let
+                    narrowHelp =
+                        open ""
+                            |> update (WindowResized 375 667)
+                            |> Tuple.first
+                            |> update ToggleHelp
+                            |> Tuple.first
+                in
+                Query.fromHtml (view narrowHelp)
+                    |> Expect.all
+                        [ Query.has [ Selector.text "Touch controls" ]
+                        , Query.has [ Selector.text "Double-tap a part" ]
+                        , Query.hasNot [ Selector.text "Ctrl + Z" ]
+                        ]
         ]

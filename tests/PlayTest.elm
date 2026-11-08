@@ -2499,6 +2499,40 @@ touchTests =
                             , Query.has [ Selector.text "Kulmapalat ja SNOT" ]
                             , Query.has [ Selector.text "Technic" ]
                             ]
+            , test "Finnish help dialog shows Kosketusohjaimet on mobile and Pikanäppäimet on desktop" <|
+                \_ ->
+                    let
+                        fiFlags =
+                            { testFlags | language = Just "fi" }
+
+                        desktopHelp =
+                            init fiFlags
+                                |> Tuple.first
+                                |> update ToggleHelp
+                                |> Tuple.first
+
+                        mobileHelp =
+                            init { fiFlags | coarsePointer = True }
+                                |> Tuple.first
+                                |> update ToggleHelp
+                                |> Tuple.first
+                    in
+                    Expect.all
+                        [ \_ ->
+                            Query.fromHtml (view desktopHelp)
+                                |> Expect.all
+                                    [ Query.has [ Selector.text "Pikanäppäimet" ]
+                                    , Query.has [ Selector.text "Kaksoisnapsauta tai -napauta" ]
+                                    ]
+                        , \_ ->
+                            Query.fromHtml (view mobileHelp)
+                                |> Expect.all
+                                    [ Query.has [ Selector.text "Kosketusohjaimet" ]
+                                    , Query.has [ Selector.text "Kaksoisnapauta osaa" ]
+                                    , Query.hasNot [ Selector.text "Ctrl + Z" ]
+                                    ]
+                        ]
+                        ()
             ]
         ]
 
