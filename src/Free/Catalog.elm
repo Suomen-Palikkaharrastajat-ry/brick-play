@@ -124,6 +124,7 @@ entriesFor tab =
             , entry "24246.dat" "Tile 1 x 1 with Rounded End" "1 x 1 half round tile"
             , entry "39739.dat" "Tile 1 x 1 Heart" "1 x 1 heart tile"
             , entry "3069b.dat" "Tile 1 x 2" "1 x 2 tile with groove"
+            , entry "2412b.dat" "Tile 1 x 2 Grille" "1 x 2 grille tile"
             , entry "3068b.dat" "Tile 2 x 2" "2 x 2 tile with groove"
             , entry "2431.dat" "Tile 1 x 4" "1 x 4 tile with groove"
             , entry "6636.dat" "Tile 1 x 6" "1 x 6 tile"
