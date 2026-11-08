@@ -44,7 +44,7 @@ jobs:
           extraPullNames: devenv
 
       - name: Install devenv
-        run: nix profile install "github:cachix/devenv/v2.0.6"
+        run: nix profile install "github:cachix/devenv/v2.1.2"
 
       - name: Cache Elm dependencies
         uses: actions/cache@v4
