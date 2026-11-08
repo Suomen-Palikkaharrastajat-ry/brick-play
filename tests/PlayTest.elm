@@ -1816,7 +1816,7 @@ shareModalTests =
                                 Expect.fail "Share modal was not open"
                     ]
                     ()
-        , test "Reverse sharing toggle renders 'Rinnakkaileikki' in Finnish" <|
+        , test "Reverse sharing toggle renders 'Rinnakkaisleikki' in Finnish" <|
             \_ ->
                 let
                     ( modelOpenFi, _ ) =
@@ -1824,7 +1824,7 @@ shareModalTests =
                 in
                 Query.fromHtml (view modelOpenFi)
                     |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
-                    |> Query.has [ Selector.text "Rinnakkaileikki" ]
+                    |> Query.has [ Selector.text "Rinnakkaisleikki" ]
         , test "Square copy buttons render accessible aria-label and title attributes with state updates" <|
             \_ ->
                 let
@@ -2034,6 +2034,53 @@ shareModalTests =
                         [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-modal") ]
                         , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-toggle") ]
                         , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "share-qr-container") ]
+                        ]
+        , test "Selecting 'Suora lähetys' (LivePreview) disables 'Rinnakkaisleikki' toggle" <|
+            \_ ->
+                let
+                    ( modelOpen, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+
+                    ( liveSelected, _ ) =
+                        update (SelectShareKind ShareModal.LivePreview) modelOpen
+
+                    ( toggledWhileDisabled, _ ) =
+                        update ToggleReverseSharing liveSelected
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view liveSelected)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "reverse-sharing-toggle") ]
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "aria-disabled" "true") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "tabindex" "-1") ]
+                                ]
+                    , \_ ->
+                        case toggledWhileDisabled.shareModal of
+                            Just sm ->
+                                Expect.equal False sm.reverseSharing
+
+                            Nothing ->
+                                Expect.fail "Share modal was not open"
+                    ]
+                    ()
+        , test "Standard sharing methods render rounded container, visible URL field and square copy button" <|
+            \_ ->
+                let
+                    ( modelOpen, _ ) =
+                        init testFlags |> Tuple.first |> update OpenShareModal
+                in
+                Query.fromHtml (view modelOpen)
+                    |> Expect.all
+                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-default-card") ]
+                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-url-field") ]
+                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                        , Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-copy-button") ]
+                            >> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "aria-label" "Copy link") ]
+                                , Query.has [ Selector.attribute (Attr.attribute "title" "Copy link") ]
+                                , Event.simulate Event.click >> Event.expect CopyShareUrl
+                                ]
                         ]
         ]
 

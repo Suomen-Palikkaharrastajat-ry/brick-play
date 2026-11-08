@@ -96,7 +96,11 @@ update : Msg -> Model -> Model
 update msg model =
     case msg of
         ToggleReverseSharing ->
-            { model | reverseSharing = not model.reverseSharing }
+            if isReverseSharingApplicable model.selected then
+                { model | reverseSharing = not model.reverseSharing }
+
+            else
+                model
 
         SetReverseSharing val ->
             { model | reverseSharing = val }
@@ -576,11 +580,7 @@ viewWithLanguage lang config model =
                         , Attr.style "gap" "8px"
                         ]
                         (List.map (viewRadioCard lang model.selected config.onSelectKind) kinds)
-                    , if isReverseSharingApplicable model.selected then
-                        viewReverseToggle lang model.reverseSharing config.onToggleReverseSharing
-
-                      else
-                        text ""
+                    , viewReverseToggle lang model.reverseSharing (isReverseSharingApplicable model.selected) config.onToggleReverseSharing
                     ]
                 , -- Right column: Link cards, action buttons, QR code, live broadcast controls
                   div
@@ -678,7 +678,12 @@ viewQrToggle lang showQr onToggle =
 
 viewRightColumn : Language -> Config msg -> Model -> String -> List (Html msg)
 viewRightColumn lang config model fullUrl =
-    if model.selected == LivePreview then
+    if model.reverseSharing then
+        [ viewParticipantCard lang config model
+        , viewHostCard lang config model
+        ]
+
+    else if model.selected == LivePreview then
         if config.liveBroadcasting then
             let
                 hasQr =
@@ -693,7 +698,7 @@ viewRightColumn lang config model fullUrl =
                     else
                         []
                    )
-                ++ [ viewCopyButton lang model.copied config.onCopyUrl
+                ++ [ viewCopyButton lang model.copied config.onCopyUrl fullUrl
                    , viewBroadcastButton lang True config.onToggleBroadcast
                    ]
 
@@ -707,25 +712,32 @@ viewRightColumn lang config model fullUrl =
                 [ viewBroadcastButton lang False config.onToggleBroadcast ]
             ]
 
-    else if model.reverseSharing then
-        [ viewParticipantCard lang config model
-        , viewHostCard lang config model
-        ]
-
     else
         let
             hasQr =
                 canGenerateQr fullUrl
         in
-        (if hasQr then
-            [ viewQrToggle lang model.showQr config.onToggleQr
-            , viewQrCode lang fullUrl model.showQr
+        [ div
+            [ Attr.attribute "data-testid" "share-default-card"
+            , Attr.style "display" "flex"
+            , Attr.style "flex-direction" "column"
+            , Attr.style "gap" "8px"
+            , Attr.style "padding" "12px"
+            , Attr.style "border-radius" "8px"
+            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+            , Attr.style "background" Theme.panelSubtleBackground
             ]
+            ((if hasQr then
+                [ viewQrToggle lang model.showQr config.onToggleQr
+                , viewQrCode lang fullUrl model.showQr
+                ]
 
-         else
-            []
-        )
-            ++ [ viewCopyButton lang model.copied config.onCopyUrl ]
+              else
+                []
+             )
+                ++ [ viewCopyButton lang model.copied config.onCopyUrl fullUrl ]
+            )
+        ]
 
 
 viewLiveBadge : Language -> Int -> Html msg
@@ -1024,58 +1036,10 @@ viewSquareCopyButton copied normalTitle copiedTitle onCopy testId =
         , Attr.style "cursor" "pointer"
         , Attr.style "border"
             (if copied then
-                "1px solid #10b981"
-
-             else
-                "1px solid " ++ Theme.borderDefault
-            )
-        , Attr.style "background"
-            (if copied then
-                "#10b981"
-
-             else
-                Theme.panelSurface
-            )
-        , Attr.style "color"
-            (if copied then
-                "#ffffff"
-
-             else
-                Theme.textPrimary
-            )
-        , Attr.style "box-sizing" "border-box"
-        ]
-        [ if copied then
-            Icon.feather "check"
-
-          else
-            Icon.feather "copy"
-        ]
-
-
-viewCopyButtonCustom : Bool -> String -> String -> msg -> String -> Html msg
-viewCopyButtonCustom copied normalText copiedText onCopy testId =
-    button
-        [ Attr.type_ "button"
-        , Attr.attribute "data-testid" testId
-        , Html.Events.onClick onCopy
-        , Attr.style "min-height" "44px"
-        , Attr.style "width" "100%"
-        , Attr.style "display" "inline-flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "justify-content" "center"
-        , Attr.style "gap" "8px"
-        , Attr.style "padding" "10px 16px"
-        , Attr.style "border-radius" "8px"
-        , Attr.style "font-weight" "600"
-        , Attr.style "font-size" "13px"
-        , Attr.style "cursor" "pointer"
-        , Attr.style "border"
-            (if copied then
                 "1px solid #16a34a"
 
              else
-                "1px solid " ++ Theme.borderDefault
+                "1px solid " ++ Theme.brandYellow
             )
         , Attr.style "background"
             (if copied then
@@ -1091,79 +1055,123 @@ viewCopyButtonCustom copied normalText copiedText onCopy testId =
              else
                 Theme.brand
             )
-        , Attr.style "transition" "background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease"
-        ]
-        [ Icon.feather
-            (if copied then
-                "check"
-
-             else
-                "copy"
-            )
-        , text
-            (if copied then
-                copiedText
-
-             else
-                normalText
-            )
-        ]
-
-
-viewCopyButton : Language -> Bool -> msg -> Html msg
-viewCopyButton lang copied onCopy =
-    viewCopyButtonCustom
-        copied
-        (I18n.shareCopyLink lang)
-        (I18n.shareCopiedLink lang)
-        onCopy
-        "share-copy-button"
-
-
-viewReverseToggle : Language -> Bool -> msg -> Html msg
-viewReverseToggle lang isReverse onToggle =
-    div
-        [ Attr.attribute "role" "checkbox"
-        , Attr.attribute "aria-checked"
-            (if isReverse then
-                "true"
-
-             else
-                "false"
-            )
-        , Attr.attribute "tabindex" "0"
-        , Attr.attribute "data-testid" "reverse-sharing-toggle"
-        , Html.Events.onClick onToggle
-        , Attr.style "min-height" "48px"
-        , Attr.style "display" "flex"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "10px"
-        , Attr.style "padding" "8px 12px"
-        , Attr.style "border-radius" "8px"
-        , Attr.style "border"
-            (if isReverse then
-                "2px solid " ++ Theme.brandYellow
-
-             else
-                "1px solid " ++ Theme.borderDefault
-            )
-        , Attr.style "background"
-            (if isReverse then
-                Theme.panelSubtleBackground
-
-             else
-                "transparent"
-            )
-        , Attr.style "cursor" "pointer"
         , Attr.style "box-sizing" "border-box"
         ]
+        [ if copied then
+            Icon.feather "check"
+
+          else
+            Icon.feather "copy"
+        , Html.span
+            [ Attr.class "sr-only" ]
+            [ text
+                (if copied then
+                    copiedTitle
+
+                 else
+                    normalTitle
+                )
+            ]
+        ]
+
+
+viewCopyButton : Language -> Bool -> msg -> String -> Html msg
+viewCopyButton lang copied onCopy fullUrl =
+    div
+        [ Attr.style "display" "flex"
+        , Attr.style "gap" "6px"
+        , Attr.style "align-items" "center"
+        ]
+        [ Html.input
+            [ Attr.type_ "text"
+            , Attr.readonly True
+            , Attr.value fullUrl
+            , Attr.attribute "data-testid" "share-url-field"
+            , Attr.style "flex" "1"
+            , Attr.style "min-width" "0"
+            , Attr.style "height" "34px"
+            , Attr.style "padding" "0 10px"
+            , Attr.style "border-radius" "6px"
+            , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+            , Attr.style "background" Theme.panelSurface
+            , Attr.style "color" Theme.textPrimary
+            , Attr.style "font-size" "11px"
+            , Attr.style "font-family" "monospace"
+            , Attr.style "box-sizing" "border-box"
+            ]
+            []
+        , viewSquareCopyButton
+            copied
+            (I18n.shareCopyLink lang)
+            (I18n.shareCopiedLink lang)
+            onCopy
+            "share-copy-button"
+        ]
+
+
+viewReverseToggle : Language -> Bool -> Bool -> msg -> Html msg
+viewReverseToggle lang isReverse isEnabled onToggle =
+    let
+        baseAttrs =
+            [ Attr.attribute "role" "checkbox"
+            , Attr.attribute "aria-checked"
+                (if isReverse then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , Attr.attribute "data-testid" "reverse-sharing-toggle"
+            , Attr.style "min-height" "48px"
+            , Attr.style "display" "flex"
+            , Attr.style "align-items" "center"
+            , Attr.style "gap" "10px"
+            , Attr.style "padding" "8px 12px"
+            , Attr.style "border-radius" "8px"
+            , Attr.style "box-sizing" "border-box"
+            ]
+
+        interactiveAttrs =
+            if isEnabled then
+                [ Attr.attribute "tabindex" "0"
+                , Html.Events.onClick onToggle
+                , Attr.style "border"
+                    (if isReverse then
+                        "2px solid " ++ Theme.brandYellow
+
+                     else
+                        "1px solid " ++ Theme.borderDefault
+                    )
+                , Attr.style "background"
+                    (if isReverse then
+                        Theme.panelSubtleBackground
+
+                     else
+                        "transparent"
+                    )
+                , Attr.style "cursor" "pointer"
+                ]
+
+            else
+                [ Attr.attribute "aria-disabled" "true"
+                , Attr.attribute "tabindex" "-1"
+                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+                , Attr.style "background" "transparent"
+                , Attr.style "cursor" "not-allowed"
+                , Attr.style "opacity" "0.45"
+                ]
+    in
+    div (baseAttrs ++ interactiveAttrs)
         [ div
             [ Attr.style "width" "18px"
             , Attr.style "height" "18px"
             , Attr.style "border-radius" "4px"
             , Attr.style "border"
                 ("2px solid "
-                    ++ (if isReverse then
+                    ++ (if not isEnabled then
+                            Theme.textMuted
+
+                        else if isReverse then
                             Theme.brandYellow
 
                         else
@@ -1175,7 +1183,7 @@ viewReverseToggle lang isReverse onToggle =
             , Attr.style "justify-content" "center"
             , Attr.style "flex-shrink" "0"
             , Attr.style "background"
-                (if isReverse then
+                (if isEnabled && isReverse then
                     Theme.brandYellow
 
                  else
@@ -1183,7 +1191,7 @@ viewReverseToggle lang isReverse onToggle =
                 )
             , Attr.style "color" Theme.brand
             ]
-            [ if isReverse then
+            [ if isEnabled && isReverse then
                 Icon.featherSized 12 "check"
 
               else
@@ -1197,12 +1205,18 @@ viewReverseToggle lang isReverse onToggle =
             [ div
                 [ Attr.style "font-size" "13px"
                 , Attr.style "font-weight" "600"
-                , Attr.style "color" Theme.textPrimary
+                , Attr.style "color"
+                    (if isEnabled then
+                        Theme.textPrimary
+
+                     else
+                        Theme.textMuted
+                    )
                 ]
                 [ text
                     (case lang of
                         Fi ->
-                            "Rinnakkaileikki"
+                            "Rinnakkaisleikki"
 
                         En ->
                             "Reverse sharing (participant grid)"
@@ -1231,6 +1245,9 @@ viewParticipantCard lang config model =
     let
         participantUrl =
             computeReverseParticipantUrl config.baseUrl model.reverseRoomId model.selected config.free config.document config.inventory
+
+        hasQr =
+            canGenerateQr participantUrl
     in
     div
         [ Attr.attribute "data-testid" "reverse-participant-card"
@@ -1242,95 +1259,87 @@ viewParticipantCard lang config model =
         , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
         , Attr.style "background" Theme.panelSubtleBackground
         ]
-        [ div
-            [ Attr.style "display" "flex"
-            , Attr.style "flex-direction" "column"
-            , Attr.style "gap" "2px"
+        ([ div
+            [ Attr.style "font-size" "13px"
+            , Attr.style "font-weight" "600"
+            , Attr.style "color" Theme.textPrimary
             ]
-            [ div
-                [ Attr.style "font-size" "13px"
-                , Attr.style "font-weight" "600"
-                , Attr.style "color" Theme.textPrimary
-                ]
-                [ text
-                    (case lang of
-                        Fi ->
-                            "Osallistujan linkki"
-
-                        En ->
-                            "Participant link"
-                    )
-                ]
-            , div
-                [ Attr.style "font-size" "11px"
-                , Attr.style "color" Theme.textMuted
-                , Attr.style "line-height" "1.3"
-                ]
-                [ text
-                    (case lang of
-                        Fi ->
-                            "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi."
-
-                        En ->
-                            "Share this link with builders. Each participant will appear in real time on your grid."
-                    )
-                ]
-            ]
-        , div
-            [ Attr.style "display" "flex"
-            , Attr.style "gap" "6px"
-            , Attr.style "align-items" "center"
-            ]
-            [ Html.input
-                [ Attr.type_ "text"
-                , Attr.readonly True
-                , Attr.value participantUrl
-                , Attr.attribute "data-testid" "participant-url-field"
-                , Attr.style "flex" "1"
-                , Attr.style "min-width" "0"
-                , Attr.style "height" "34px"
-                , Attr.style "padding" "0 10px"
-                , Attr.style "border-radius" "6px"
-                , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
-                , Attr.style "background" Theme.panelSurface
-                , Attr.style "color" Theme.textPrimary
-                , Attr.style "font-size" "11px"
-                , Attr.style "font-family" "monospace"
-                , Attr.style "box-sizing" "border-box"
-                ]
-                []
-            , viewSquareCopyButton
-                model.copiedParticipant
+            [ text
                 (case lang of
                     Fi ->
-                        "Kopioi linkki"
+                        "Osallistujan linkki"
 
                     En ->
-                        "Copy link"
+                        "Participant link"
                 )
-                (case lang of
-                    Fi ->
-                        "Kopioitu!"
-
-                    En ->
-                        "Copied!"
-                )
-                config.onCopyParticipantUrl
-                "copy-participant-url"
             ]
-        , if canGenerateQr participantUrl then
-            div
-                [ Attr.style "display" "flex"
-                , Attr.style "flex-direction" "column"
-                , Attr.style "gap" "8px"
-                ]
-                [ viewQrToggleCustom lang model.showQr config.onToggleQr "participant-qr-toggle"
-                , viewParticipantQrCode lang participantUrl model.showQr
-                ]
+         ]
+            ++ (if hasQr then
+                    [ viewQrToggleCustom lang model.showQr config.onToggleQr "participant-qr-toggle"
+                    , viewParticipantQrCode lang participantUrl model.showQr
+                    ]
 
-          else
-            text ""
-        ]
+                else
+                    [ div
+                        [ Attr.style "font-size" "11px"
+                        , Attr.style "color" Theme.textMuted
+                        , Attr.style "line-height" "1.3"
+                        ]
+                        [ text
+                            (case lang of
+                                Fi ->
+                                    "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi."
+
+                                En ->
+                                    "Share this link with builders. Each participant will appear in real time on your grid."
+                            )
+                        ]
+                    ]
+               )
+            ++ [ div
+                    [ Attr.style "display" "flex"
+                    , Attr.style "gap" "6px"
+                    , Attr.style "align-items" "center"
+                    ]
+                    [ Html.input
+                        [ Attr.type_ "text"
+                        , Attr.readonly True
+                        , Attr.value participantUrl
+                        , Attr.attribute "data-testid" "participant-url-field"
+                        , Attr.style "flex" "1"
+                        , Attr.style "min-width" "0"
+                        , Attr.style "height" "34px"
+                        , Attr.style "padding" "0 10px"
+                        , Attr.style "border-radius" "6px"
+                        , Attr.style "border" ("1px solid " ++ Theme.borderDefault)
+                        , Attr.style "background" Theme.panelSurface
+                        , Attr.style "color" Theme.textPrimary
+                        , Attr.style "font-size" "11px"
+                        , Attr.style "font-family" "monospace"
+                        , Attr.style "box-sizing" "border-box"
+                        ]
+                        []
+                    , viewSquareCopyButton
+                        model.copiedParticipant
+                        (case lang of
+                            Fi ->
+                                "Kopioi linkki"
+
+                            En ->
+                                "Copy link"
+                        )
+                        (case lang of
+                            Fi ->
+                                "Kopioitu!"
+
+                            En ->
+                                "Copied!"
+                        )
+                        config.onCopyParticipantUrl
+                        "copy-participant-url"
+                    ]
+               ]
+        )
 
 
 viewHostCard : Language -> Config msg -> Model -> Html msg
@@ -1480,15 +1489,15 @@ viewParticipantQrCode lang url showQr =
                 ]
                 [ div
                     [ Attr.attribute "data-testid" "participant-qr-code"
-                    , Attr.style "background" Theme.panelSurface
+                    , Attr.style "background" "#ffffff"
                     , Attr.style "padding" "16px"
                     , Attr.style "border-radius" "8px"
                     , Attr.style "display" "flex"
                     , Attr.style "align-items" "center"
                     , Attr.style "justify-content" "center"
                     , Attr.style "box-shadow" "0 2px 6px rgba(0, 0, 0, 0.15)"
-                    , Attr.style "width" "200px"
-                    , Attr.style "height" "200px"
+                    , Attr.style "width" "180px"
+                    , Attr.style "height" "180px"
                     , Attr.style "box-sizing" "border-box"
                     ]
                     [ QRCode.toSvg
@@ -1504,6 +1513,22 @@ viewParticipantQrCode lang url showQr =
                     , Attr.style "text-align" "center"
                     ]
                     [ text (I18n.shareScanQrHint lang) ]
+                , div
+                    [ Attr.style "font-size" "11px"
+                    , Attr.style "color" Theme.textMuted
+                    , Attr.style "text-align" "center"
+                    , Attr.style "line-height" "1.3"
+                    , Attr.style "max-width" "240px"
+                    ]
+                    [ text
+                        (case lang of
+                            Fi ->
+                                "Jaa tämä linkki rakentajille. Jokainen avaaja näkyy reaaliajassa ruudukossasi."
+
+                            En ->
+                                "Share this link with builders. Each participant will appear in real time on your grid."
+                        )
+                    ]
                 ]
 
         Err _ ->
