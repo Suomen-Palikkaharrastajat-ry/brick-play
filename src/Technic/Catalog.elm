@@ -115,11 +115,11 @@ curatedParts =
       , category = GearsCategory
       , description = "12-tooth double-bevel gear"
       }
-    , { name = "2-Start Worm Gear"
+    , { name = "Sliding Worm Gear"
       , file = "32905.dat"
       , color = 7
       , category = GearsCategory
-      , description = "2-tooth, two-start sliding worm gear"
+      , description = "LDraw name: two-toothed sliding; one thread start for ratio math"
       }
     , { name = "24T Gear with Single Axle Hole"
       , file = "3648b.dat"

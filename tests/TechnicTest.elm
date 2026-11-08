@@ -106,7 +106,7 @@ suite =
                             , ( ( "3648b.dat", 24, 30 ), SpurGear )
                             , ( ( "3649.dat", 40, 50 ), SpurGear )
                             , ( ( "4716.dat", 1, 12 ), WormGear )
-                            , ( ( "32905.dat", 2, 12 ), WormGear )
+                            , ( ( "32905.dat", 1, 12 ), WormGear )
                             , ( ( "69778.dat", 12, 12 ), SpurGear )
                             , ( ( "32198.dat", 20, 25 ), BevelGear )
                             , ( ( "32198a.dat", 20, 25 ), BevelGear )
@@ -297,6 +297,35 @@ suite =
                         , \s -> Expect.equal s.rotatingCount 2
                         , \s -> Expect.equal s.isSingleMachine True
                         , \s -> Expect.equal (Machine.isAccomplished s) True
+                        ]
+                        state
+            , test "wheel-first worm→wheel→spur chain selects the worm motor and reaches every gear" <|
+                \_ ->
+                    let
+                        wheelFirst =
+                            { part = "69778.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 24 0) }
+
+                        wormSecond =
+                            { part = "4716.dat"
+                            , color = 7
+                            , matrix = Mat4.makeRotate (pi / 2) (vec3 0 1 0)
+                            }
+
+                        spurThird =
+                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 22 24 0) }
+
+                        ( doc, _ ) =
+                            Edit.apply (Edit.Add [ wheelFirst, wormSecond, spurThird ]) Document.empty
+
+                        state =
+                            Machine.analyseMachine doc EmbeddedParts.cache
+                    in
+                    Expect.all
+                        [ \s -> Expect.equal [ 0, 1, 2 ] (List.map .id s.gears)
+                        , \s -> Expect.equal (Just 1) s.motorGearId
+                        , \s -> Expect.equal 3 s.rotatingCount
+                        , \s -> Expect.equal True s.isSingleMachine
+                        , \s -> Expect.equal True (Machine.isAccomplished s)
                         ]
                         state
             , test "two distant gears that do not mesh are not accomplished" <|

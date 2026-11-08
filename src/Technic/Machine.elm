@@ -53,8 +53,8 @@ analyseMachine document partCache =
         graph =
             Detect.buildGearGraph allGears
     in
-    case List.filter (\gear -> gear.spec.motorCapable) rotatingGears of
-        [] ->
+    case Physics.defaultMotorGearId graph of
+        Nothing ->
             { gears = []
             , gearGraph = graph
             , rotatingCount = 0
@@ -62,11 +62,8 @@ analyseMachine document partCache =
             , motorGearId = Nothing
             }
 
-        firstMotor :: _ ->
+        Just motorId ->
             let
-                motorId =
-                    firstMotor.id
-
                 -- Propagate with arbitrary angle to identify all reachable gears
                 reachedAngles =
                     Physics.propagate graph motorId 1.0
