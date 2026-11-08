@@ -1,11 +1,11 @@
 {
-  "name": "Palikkakehys",
-  "short_name": "Palikkakehys",
-  "description": "Palikkamallien katselukehys",
-  "start_url": "/docs",
+  "name": "Palikkaleikkikenttä",
+  "short_name": "Palikkaleikkikenttä",
+  "description": "Rakenna vapaasti virtuaalisilla palikoilla ja kokeile yhdessä pyöriviä Technic-hammaspyöriä suoraan selaimessasi.",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#0f6cab",
+  "theme_color": "#fac80a",
   "icons": [
     {
       "src": "/icon-192.png",
