@@ -729,6 +729,7 @@ export class Viewer {
       this.dc = dc
 
       const flush = () => {
+        this.onStatus('live')
         this.flushPendingParticipantSnapshot()
       }
       if (dc.readyState === 'open') {

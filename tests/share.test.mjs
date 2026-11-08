@@ -848,6 +848,31 @@ test('Viewer lifecycle, chunk handling and error reporting', async (t) => {
     v.stop()
   })
 
+  await t.test('transitions to live status when data channel opens', async () => {
+    const statuses = []
+    const v = new Viewer({
+      signalingUrl: 'https://sig.example.com',
+      roomId: 'TEST1234',
+      WebSocket: MockWebSocket,
+      RTCPeerConnection: MockRTCPeerConnection,
+      onStatus: (s) => statuses.push(s),
+    })
+
+    await v.start()
+    v.ws.simulateOpen()
+    await v.ws.simulateMessage({
+      type: 'offer',
+      offer: { type: 'offer', sdp: 'mock-offer-sdp' },
+    })
+
+    const dc = new MockDataChannel(DATA_CHANNEL)
+    v.pc.dispatchEvent('datachannel', { channel: dc })
+    dc.dispatchEvent('open', {})
+
+    assert.ok(statuses.includes('live'))
+    v.stop()
+  })
+
   await t.test('reports reconnecting when data channel closes', async () => {
     const statuses = []
     const v = new Viewer({

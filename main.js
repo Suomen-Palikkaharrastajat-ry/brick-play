@@ -281,9 +281,13 @@ if (isViewer && viewerRoomId) {
   if (runtime.app?.ports?.pushReverseSnapshot) {
     let debounceTimer = null
     let latestData = null
+    let lastSent = 0
+    const DEBOUNCE_MS = 250
+    const MAX_WAIT_MS = 600
 
     const sendSnapshot = () => {
       if (!latestData || !viewer) return
+      lastSent = Date.now()
       const canvas = document.querySelector('canvas')
       let thumbnail = ''
       if (canvas && typeof canvas.toDataURL === 'function') {
@@ -303,13 +307,22 @@ if (isViewer && viewerRoomId) {
 
     runtime.app.ports.pushReverseSnapshot.subscribe((data) => {
       latestData = data
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-      }
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null
+      const now = Date.now()
+      if (now - lastSent > MAX_WAIT_MS) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer)
+          debounceTimer = null
+        }
         sendSnapshot()
-      }, 400)
+      } else {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer)
+        }
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null
+          sendSnapshot()
+        }, DEBOUNCE_MS)
+      }
     })
   }
 

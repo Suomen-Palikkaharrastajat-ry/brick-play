@@ -1421,7 +1421,11 @@ updateApp msg model =
         reverseSnapshotCmd =
             case settled.reverseParticipantRoom of
                 Just _ ->
-                    if hashFor model settled /= Nothing || List.length (Core.getPlacements model.studio) /= List.length (Core.getPlacements settled.studio) then
+                    if
+                        (hashFor model settled /= Nothing)
+                            || (List.length (Core.getPlacements model.studio) /= List.length (Core.getPlacements settled.studio))
+                            || (model.studio.viewport.camera /= settled.studio.viewport.camera)
+                    then
                         pushReverseSnapshotFor settled
 
                     else
@@ -3535,68 +3539,43 @@ viewReverseGrid model roomId =
                             else
                                 " participants"
                            )
-
-        copyButtonLabel =
-            case model.language of
-                Fi ->
-                    "Kopioi osallistujan linkki"
-
-                En ->
-                    "Copy participant link"
-
-        participantUrl =
-            ShareModal.computeReverseParticipantUrl model.baseUrl roomId ShareModal.PartsSet model.free model.studio.document model.inventory
     in
     div
         [ Attr.style "position" "fixed"
         , Attr.style "inset" "0"
         , Attr.style "overflow-y" "auto"
-        , Attr.style "background" "var(--color-bg-page)"
-        , Attr.style "color" "var(--color-text-primary)"
+        , Attr.style "background" "var(--color-bg-dark)"
+        , Attr.style "color" "var(--color-text-on-dark)"
         , Attr.style "font-family" "var(--font-sans)"
         , Attr.class "flex flex-col min-h-screen"
         ]
         [ -- Sticky top header
           header
-            [ Attr.class "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b px-4 py-3 shadow-xs"
-            , Attr.style "background" "color-mix(in srgb, var(--color-bg-page) 95%, transparent)"
-            , Attr.style "border-color" "var(--color-border-default)"
+            [ Attr.class "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b px-4 py-2.5 shadow-xs"
+            , Attr.style "background" "color-mix(in srgb, var(--color-bg-dark) 95%, transparent)"
+            , Attr.style "border-color" "rgba(255, 255, 255, 0.1)"
             , Attr.style "backdrop-filter" "blur(8px)"
             , Attr.style "-webkit-backdrop-filter" "blur(8px)"
             ]
             [ div [ Attr.class "flex items-center gap-3" ]
                 [ span
-                    [ Attr.class "inline-flex items-center px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase border"
-                    , Attr.style "background" "var(--color-bg-subtle)"
-                    , Attr.style "border-color" "var(--color-border-default)"
-                    , Attr.style "color" "var(--color-text-primary)"
+                    [ Attr.class "inline-flex items-center px-3 py-1 rounded-sm text-xs font-bold tracking-wider uppercase border"
+                    , Attr.style "background" "rgba(255, 255, 255, 0.08)"
+                    , Attr.style "border-color" "rgba(255, 255, 255, 0.15)"
+                    , Attr.style "color" "var(--color-text-on-dark)"
                     ]
                     [ text badgeText ]
                 , span
                     [ Attr.class "text-sm font-medium"
-                    , Attr.style "color" "var(--color-text-muted)"
+                    , Attr.style "color" "rgba(255, 255, 255, 0.65)"
                     ]
                     [ text activeCountText ]
                 ]
-            , div [ Attr.class "flex items-center gap-2" ]
-                [ button
-                    [ Attr.type_ "button"
-                    , Attr.attribute "data-testid" "grid-copy-link"
-                    , onClick CopyParticipantUrl
-                    , Attr.class "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer border shadow-xs"
-                    , Attr.style "background" "var(--color-brand-yellow)"
-                    , Attr.style "color" "var(--color-text-primary)"
-                    , Attr.style "border-color" "var(--color-border-default)"
-                    ]
-                    [ Icon.feather "copy"
-                    , text copyButtonLabel
-                    ]
-                ]
             ]
         , -- Main body
-          div [ Attr.class "flex-1 flex flex-col p-4" ]
+          div [ Attr.class "flex-1 flex flex-col p-1 sm:p-1.5" ]
             [ if Dict.isEmpty model.participants then
-                viewGridWaitingState model participantUrl
+                viewGridWaitingState model
 
               else
                 viewGridParticipants model
@@ -3611,8 +3590,8 @@ viewReverseGrid model roomId =
         ]
 
 
-viewGridWaitingState : Model -> String -> Html Msg
-viewGridWaitingState model participantUrl =
+viewGridWaitingState : Model -> Html Msg
+viewGridWaitingState model =
     let
         title =
             case model.language of
@@ -3625,29 +3604,22 @@ viewGridWaitingState model participantUrl =
         subtitle =
             case model.language of
                 Fi ->
-                    "Jaa alla oleva linkki osallistujille. Heidän rakennelmansa ilmestyvät tähän ruudukkoon reaaliajassa."
+                    "Jaa osallistujan linkki jaettavasta näkymästä. Heidän rakennelmansa ilmestyvät tähän ruudukkoon reaaliajassa."
 
                 En ->
-                    "Share the link below with participants. Their builds will appear in this grid in real time."
-
-        copyBtnText =
-            case model.language of
-                Fi ->
-                    "Kopioi linkki"
-
-                En ->
-                    "Copy link"
+                    "Share the participant link from the share dialog. Their builds will appear in this grid in real time."
     in
     div
         [ Attr.attribute "data-testid" "grid-waiting-state"
-        , Attr.class "max-w-lg mx-auto my-auto w-full p-8 rounded-2xl border text-center shadow-md flex flex-col items-center gap-4"
-        , Attr.style "background" "var(--color-bg-page)"
-        , Attr.style "border-color" "var(--color-border-default)"
+        , Attr.class "max-w-md mx-auto my-auto w-full p-8 text-center shadow-lg flex flex-col items-center gap-3"
+        , Attr.style "background" "rgba(255, 255, 255, 0.04)"
+        , Attr.style "border" "1px solid rgba(255, 255, 255, 0.1)"
+        , Attr.style "color" "var(--color-text-on-dark)"
         ]
         [ div
-            [ Attr.class "w-16 h-16 rounded-full flex items-center justify-center mb-2"
-            , Attr.style "background" "var(--color-bg-subtle)"
-            , Attr.style "color" "var(--color-text-muted)"
+            [ Attr.class "w-16 h-16 flex items-center justify-center mb-1"
+            , Attr.style "background" "rgba(255, 255, 255, 0.08)"
+            , Attr.style "color" "rgba(255, 255, 255, 0.7)"
             ]
             [ FeatherIcons.users
                 |> FeatherIcons.withSize 32
@@ -3655,36 +3627,14 @@ viewGridWaitingState model participantUrl =
             ]
         , h2
             [ Attr.class "text-xl font-bold"
-            , Attr.style "color" "var(--color-text-primary)"
+            , Attr.style "color" "var(--color-text-on-dark)"
             ]
             [ text title ]
         , p
             [ Attr.class "text-sm max-w-sm"
-            , Attr.style "color" "var(--color-text-muted)"
+            , Attr.style "color" "rgba(255, 255, 255, 0.65)"
             ]
             [ text subtitle ]
-        , div [ Attr.class "w-full flex items-center gap-2 mt-2" ]
-            [ input
-                [ Attr.type_ "text"
-                , Attr.readonly True
-                , Attr.value participantUrl
-                , Attr.class "flex-1 px-3 py-2 text-xs rounded-lg border font-mono select-all truncate"
-                , Attr.style "background" "var(--color-bg-subtle)"
-                , Attr.style "border-color" "var(--color-border-default)"
-                , Attr.style "color" "var(--color-text-primary)"
-                ]
-                []
-            , button
-                [ Attr.type_ "button"
-                , Attr.attribute "data-testid" "grid-waiting-copy-btn"
-                , onClick CopyParticipantUrl
-                , Attr.class "px-4 py-2 text-xs font-semibold rounded-lg shrink-0 border transition cursor-pointer shadow-xs"
-                , Attr.style "background" "var(--color-brand-yellow)"
-                , Attr.style "color" "var(--color-text-primary)"
-                , Attr.style "border-color" "var(--color-border-default)"
-                ]
-                [ text copyBtnText ]
-            ]
         ]
 
 
@@ -3696,7 +3646,7 @@ viewGridParticipants model =
                 |> List.sortBy .name
     in
     div
-        [ Attr.class "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4" ]
+        [ Attr.class "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1 sm:gap-1.5" ]
         (List.map (viewParticipantCard model) sortedParticipants)
 
 
@@ -3752,19 +3702,19 @@ viewParticipantCard model p =
     in
     div
         [ Attr.attribute "data-testid" "participant-card"
-        , Attr.class "flex flex-col rounded-xl border overflow-hidden shadow-xs transition hover:shadow-md"
-        , Attr.style "background" "var(--color-bg-page)"
-        , Attr.style "border-color" "var(--color-border-default)"
+        , Attr.class "relative flex flex-col overflow-hidden border transition"
+        , Attr.style "background" "var(--color-bg-dark)"
+        , Attr.style "border-color" "rgba(255, 255, 255, 0.12)"
         ]
         [ -- 2D Thumbnail or fallback
           div
             [ Attr.class "w-full aspect-[4/3] flex items-center justify-center relative overflow-hidden"
-            , Attr.style "background" "var(--color-bg-subtle)"
+            , Attr.style "background" "rgba(0, 0, 0, 0.4)"
             ]
             [ if String.isEmpty p.thumbnail then
                 div
                     [ Attr.class "flex flex-col items-center justify-center gap-1.5"
-                    , Attr.style "color" "var(--color-text-muted)"
+                    , Attr.style "color" "rgba(255, 255, 255, 0.35)"
                     ]
                     [ Icon.featherSized 28 "box"
                     , span [ Attr.class "text-xs" ]
@@ -3786,56 +3736,62 @@ viewParticipantCard model p =
                     , Attr.class "w-full h-full object-contain"
                     ]
                     []
-            ]
-        , -- Info and inspect action
-          div [ Attr.class "p-3.5 flex flex-col gap-2.5 flex-1 justify-between" ]
-            [ div [ Attr.class "flex items-start justify-between gap-2" ]
-                [ div [ Attr.class "flex flex-col min-w-0" ]
+            , -- Dark gradient overlay at the bottom for legibility
+              div
+                [ Attr.class "pointer-events-none absolute inset-x-0 bottom-0 h-16"
+                , Attr.style "background" "linear-gradient(to top, rgba(5, 19, 29, 0.95) 0%, rgba(5, 19, 29, 0.5) 60%, transparent 100%)"
+                ]
+                []
+            , -- Bottom-left overlay: Participant name and connection status
+              div
+                [ Attr.class "absolute bottom-2 left-2 z-10 flex items-center gap-1.5 max-w-[calc(100%-44px)] truncate" ]
+                [ span
+                    [ Attr.class
+                        (if isConnected then
+                            "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+
+                         else
+                            "bg-amber-400"
+                        )
+                    , Attr.style "width" "8px"
+                    , Attr.style "height" "8px"
+                    , Attr.style "border-radius" "50%"
+                    , Attr.style "display" "inline-block"
+                    , Attr.style "flex-shrink" "0"
+                    , Attr.title statusLabel
+                    ]
+                    []
+                , div
+                    [ Attr.class "flex items-baseline gap-1.5 truncate" ]
                     [ span
-                        [ Attr.class "font-bold text-sm truncate"
-                        , Attr.style "color" "var(--color-text-primary)"
+                        [ Attr.class "font-bold text-xs truncate"
+                        , Attr.style "color" "var(--color-text-on-dark)"
+                        , Attr.style "text-shadow" "0 1px 3px rgba(0, 0, 0, 0.8)"
                         ]
                         [ text p.name ]
                     , span
-                        [ Attr.class "text-xs"
-                        , Attr.style "color" "var(--color-text-muted)"
+                        [ Attr.class "text-[11px] truncate opacity-75"
+                        , Attr.style "color" "var(--color-text-on-dark)"
+                        , Attr.style "text-shadow" "0 1px 2px rgba(0, 0, 0, 0.8)"
                         ]
-                        [ text brickCountLabel ]
-                    ]
-                , div
-                    [ Attr.class "flex items-center gap-1 shrink-0 pt-0.5"
-                    , Attr.title statusLabel
-                    ]
-                    [ span
-                        [ Attr.class
-                            (if isConnected then
-                                "bg-emerald-500"
-
-                             else
-                                "bg-amber-400"
-                            )
-                        , Attr.style "width" "8px"
-                        , Attr.style "height" "8px"
-                        , Attr.style "border-radius" "50%"
-                        , Attr.style "display" "inline-block"
-                        ]
-                        []
-                    , span [ Attr.class "sr-only" ] [ text statusLabel ]
+                        [ text ("· " ++ brickCountLabel) ]
                     ]
                 ]
-            , button
+            , -- Bottom-right overlay: Focus in / 3D inspect button
+              button
                 [ Attr.type_ "button"
                 , Attr.attribute "data-testid" "inspect-participant-btn"
+                , Attr.attribute "aria-label" inspectLabel
+                , Attr.title inspectLabel
                 , onClick (InspectParticipant (Just p.id))
-                , Attr.class "w-full py-1.5 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center justify-center gap-1.5"
-                , Attr.style "background" "var(--color-bg-subtle)"
-                , Attr.style "color" "var(--color-text-primary)"
-                , Attr.style "border-color" "var(--color-border-default)"
+                , Attr.class "absolute bottom-2 right-2 z-10 w-7 h-7 transition cursor-pointer flex items-center justify-center border"
+                , Attr.style "background" "rgba(5, 19, 29, 0.75)"
+                , Attr.style "border-color" "rgba(255, 255, 255, 0.25)"
+                , Attr.style "color" "var(--color-text-on-dark)"
                 ]
-                [ FeatherIcons.eye
+                [ FeatherIcons.maximize2
                     |> FeatherIcons.withSize 14
                     |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
-                , text inspectLabel
                 ]
             ]
         ]

@@ -1144,8 +1144,8 @@ reverseHostTests =
                         [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-state") ]
                         , Query.has [ Selector.containing [ Selector.text "GRID STUDIO · ROOM123" ] ]
                         , Query.has [ Selector.containing [ Selector.text "0 participants" ] ]
-                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
-                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-copy-btn") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "grid-waiting-copy-btn") ]
                         ]
         , test "adding and updating participant via ReverseParticipantUpdated" <|
             \_ ->
@@ -1266,13 +1266,13 @@ reverseHostTests =
                                 , Query.has [ Selector.attribute (Attr.attribute "data-testid" "inspector-participant-pill") ]
                                 , Query.has [ Selector.containing [ Selector.text "Liisa" ] ]
                                 , Query.has [ Selector.containing [ Selector.text "2 bricks" ] ]
-                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
                                 ]
                     , \_ ->
                         Expect.equal Nothing modelGrid.inspectedParticipant
                     , \_ ->
                         Query.fromHtml (view modelGrid)
-                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "grid-copy-link") ]
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
                     ]
                     ()
         , test "live document update when inspected participant sends snapshot" <|
