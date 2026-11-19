@@ -359,6 +359,7 @@ freeDockTests =
         , test "exactly one colour swatch is pressed, the paint colour" <|
             \_ ->
                 Query.fromHtml (view (open ""))
+                    |> Query.find [ Selector.class "palette-scroll-y" ]
                     |> Query.findAll [ Selector.attribute (Attr.attribute "aria-pressed" "true") ]
                     |> Query.count (Expect.equal 1)
         , test "the Plates tab lists plates" <|

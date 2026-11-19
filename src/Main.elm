@@ -136,6 +136,7 @@ import Simulation
 import Step
 import Studio.Colours as Colours
 import Studio.Core as Core
+import Studio.Floor as Floor
 import Studio.GearFeedback as GearFeedback
 import Studio.Gizmo as Gizmo
 import Studio.HashPayload as HashPayload
@@ -247,6 +248,7 @@ type alias Model =
     , nowMillis : Int
     , motorDirection : Float
     , requestedMotorIndex : Maybe Int
+    , floorEnabled : Bool
     }
 
 
@@ -386,6 +388,7 @@ type Msg
     | SetMotorGear (Maybe Int)
     | Tick Float
     | ToggleRealistic
+    | ToggleFloor
     | CaptureSnapshot
     | SnapshotReady { dataUrl : String, filename : String }
     | SnapshotProgress { fraction : Float, samples : Int }
@@ -892,6 +895,7 @@ init flags =
             , nowMillis = 0
             , motorDirection = 1.0
             , requestedMotorIndex = Nothing
+            , floorEnabled = True
             }
 
         fetchViewportSize =
@@ -2197,6 +2201,9 @@ step msg model =
             , Cmd.none
             )
 
+        ToggleFloor ->
+            ( { model | floorEnabled = not model.floorEnabled }, Cmd.none )
+
         CaptureSnapshot ->
             if model.viewerRoom /= Nothing then
                 ( model, Cmd.none )
@@ -3245,6 +3252,13 @@ applyShortcut keyEvent ( model, cmd ) =
                 let
                     ( next, actionCmd ) =
                         update ToggleMotorDirection model
+                in
+                ( next, Cmd.batch [ cmd, actionCmd ] )
+
+            Just PlayShortcuts.ToggleFloor ->
+                let
+                    ( next, actionCmd ) =
+                        update ToggleFloor model
                 in
                 ( next, Cmd.batch [ cmd, actionCmd ] )
 
@@ -4790,6 +4804,17 @@ realistic-rendering and snapshot buttons.
 globeControl : Model -> Html Msg
 globeControl model =
     let
+        floorButton =
+            Button.icon
+                { icon = Icon.feather "grid"
+                , label = I18n.cameraFloor model.language
+                , shortcut = Just "G"
+                , pressed = Just model.floorEnabled
+                , enabled = True
+                , showLabel = False
+                }
+                ToggleFloor
+
         extras =
             if model.viewerRoom /= Nothing then
                 [ Button.icon
@@ -4801,6 +4826,7 @@ globeControl model =
                     , showLabel = False
                     }
                     ToggleRealistic
+                , floorButton
                 ]
 
             else
@@ -4813,6 +4839,7 @@ globeControl model =
                     , showLabel = False
                     }
                     ToggleRealistic
+                , floorButton
                 , Button.icon
                     { icon = Icon.feather "camera"
                     , label = I18n.cameraTakeSnapshot model.language
@@ -5109,18 +5136,27 @@ viewCanvas model =
 
             else
                 { studio | viewport = Viewport.setHiddenSources animated.sources studio.viewport }
+
+        floorEntities camera aspect =
+            if model.floorEnabled then
+                [ Floor.entity camera aspect ]
+
+            else
+                []
     in
     Core.viewWithExtra
         { width = model.windowWidth
         , height = model.windowHeight
         , extraEntities =
             \camera aspect ->
-                if Set.isEmpty animated.gears then
-                    []
+                floorEntities camera aspect
+                    ++ (if Set.isEmpty animated.gears then
+                            []
 
-                else
-                    Simulation.gearEntitiesFor animated.gears camera studio.viewport.renderStyle aspect model.simulation
-                        ++ Simulation.drivenEntitiesFor animated.gears camera studio.viewport.renderStyle aspect model.simulation
+                        else
+                            Simulation.gearEntitiesFor animated.gears camera studio.viewport.renderStyle aspect model.simulation
+                                ++ Simulation.drivenEntitiesFor animated.gears camera studio.viewport.renderStyle aspect model.simulation
+                       )
         }
         shown
 
