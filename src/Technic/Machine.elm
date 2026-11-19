@@ -1,6 +1,7 @@
 module Technic.Machine exposing
     ( MachineState
     , analyseMachine
+    , analyseMachineWithMotor
     , isAccomplished
     )
 
@@ -11,6 +12,7 @@ machine where every gear is meshed and rotating together in real time.
 
 -}
 
+import Array
 import Data
 import Dict
 import Gear.Detect as Detect
@@ -36,10 +38,17 @@ type alias MachineState =
     }
 
 
-{-| Analyze the document for Technic gears and mesh connections.
+{-| Analyze the document for Technic gears and mesh connections using default automatic motor.
 -}
 analyseMachine : Document -> PartCache -> MachineState
 analyseMachine document partCache =
+    analyseMachineWithMotor Nothing document partCache
+
+
+{-| Analyze the document for Technic gears and mesh connections with an optional requested motor gear ID.
+-}
+analyseMachineWithMotor : Maybe GearId -> Document -> PartCache -> MachineState
+analyseMachineWithMotor requestedMotor document partCache =
     let
         lines =
             Document.toLines document
@@ -52,8 +61,25 @@ analyseMachine document partCache =
 
         graph =
             Detect.buildGearGraph allGears
+
+        selectedMotor =
+            case requestedMotor of
+                Just reqId ->
+                    case Array.get reqId graph.instances of
+                        Just g ->
+                            if g.spec.rotates && g.spec.motorCapable then
+                                Just reqId
+
+                            else
+                                Physics.defaultMotorGearId graph
+
+                        Nothing ->
+                            Physics.defaultMotorGearId graph
+
+                Nothing ->
+                    Physics.defaultMotorGearId graph
     in
-    case Physics.defaultMotorGearId graph of
+    case selectedMotor of
         Nothing ->
             { gears = []
             , gearGraph = graph

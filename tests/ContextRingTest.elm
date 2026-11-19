@@ -298,6 +298,9 @@ closeTests =
                                     , modeAnchor = ( 400, 300 )
                                     , baseElevation = 0
                                     , shiftToggle = Nothing
+                                    , dwellTime = 0.0
+                                    , lastDwellPoint = ( 400, 300 )
+                                    , lastDwellStepTime = 0.0
                                     }
                         }
                 in

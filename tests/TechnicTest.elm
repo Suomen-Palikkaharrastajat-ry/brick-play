@@ -105,8 +105,8 @@ suite =
                             , ( ( "3648.dat", 24, 30 ), SpurGear )
                             , ( ( "3648b.dat", 24, 30 ), SpurGear )
                             , ( ( "3649.dat", 40, 50 ), SpurGear )
-                            , ( ( "4716.dat", 1, 12 ), WormGear )
-                            , ( ( "32905.dat", 1, 12 ), WormGear )
+                            , ( ( "4716.dat", 1, 10 ), WormGear )
+                            , ( ( "32905.dat", 1, 10 ), WormGear )
                             , ( ( "69778.dat", 12, 12 ), SpurGear )
                             , ( ( "32198.dat", 20, 25 ), BevelGear )
                             , ( ( "32198a.dat", 20, 25 ), BevelGear )
@@ -303,7 +303,7 @@ suite =
                 \_ ->
                     let
                         wheelFirst =
-                            { part = "69778.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 24 0) }
+                            { part = "69778.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 22 0) }
 
                         wormSecond =
                             { part = "4716.dat"
@@ -312,7 +312,7 @@ suite =
                             }
 
                         spurThird =
-                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 22 24 0) }
+                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 22 22 0) }
 
                         ( doc, _ ) =
                             Edit.apply (Edit.Add [ wheelFirst, wormSecond, spurThird ]) Document.empty
@@ -550,7 +550,7 @@ suite =
                 \_ ->
                     let
                         twin24Model =
-                            "1 1 0 -60 -20 0 0 -1 0 1 0 1 0 0 32524.dat\n1 0 0 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 0 60 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 7 0 -60 0 1 0 0 0 1 0 0 0 1 3648.dat\n1 7 0 -60 12 1 0 0 0 1 0 0 0 1 6590.dat"
+                            "1 1 0 -60 -20 0 0 -1 0 1 0 1 0 0 32524.dat\n1 0 0 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 0 60 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 7 0 -60 0 1 0 0 0 1 0 0 0 1 3648.dat\n1 7 0 -60 20 1 0 0 0 1 0 0 0 1 6590.dat"
 
                         twin24Parts =
                             "3648.dat:7:2,6590.dat:7:2"
@@ -572,7 +572,7 @@ suite =
                 \_ ->
                     let
                         reducerModel =
-                            "1 1 0 -60 -20 0 0 -1 0 1 0 1 0 0 32524.dat\n1 0 0 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 0 60 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 7 0 -60 0 1 0 0 0 1 0 0 0 1 3647.dat\n1 7 0 -60 12 1 0 0 0 1 0 0 0 1 6590.dat"
+                            "1 1 0 -60 -20 0 0 -1 0 1 0 1 0 0 32524.dat\n1 0 0 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 0 60 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 7 0 -60 0 1 0 0 0 1 0 0 0 1 3647.dat\n1 7 0 -60 20 1 0 0 0 1 0 0 0 1 6590.dat"
 
                         reducerParts =
                             "3649.dat:7:1,6590.dat:7:2"

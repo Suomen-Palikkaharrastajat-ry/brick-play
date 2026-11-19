@@ -245,6 +245,8 @@ type alias Model =
     , participants : Dict String Participant
     , inspectedParticipant : Maybe String
     , nowMillis : Int
+    , motorDirection : Float
+    , requestedMotorIndex : Maybe Int
     }
 
 
@@ -380,6 +382,8 @@ type Msg
     | FitView
     | DownloadIo
     | TogglePlay
+    | ToggleMotorDirection
+    | SetMotorGear (Maybe Int)
     | Tick Float
     | ToggleRealistic
     | CaptureSnapshot
@@ -886,6 +890,8 @@ init flags =
             , participants = Dict.empty
             , inspectedParticipant = Nothing
             , nowMillis = 0
+            , motorDirection = 1.0
+            , requestedMotorIndex = Nothing
             }
 
         fetchViewportSize =
@@ -1822,7 +1828,7 @@ settle before after =
 
         analysed =
             if edited then
-                { after | machine = Machine.analyseMachine after.studio.document after.studio.viewport.partCache }
+                { after | machine = Machine.analyseMachineWithMotor after.requestedMotorIndex after.studio.document after.studio.viewport.partCache }
 
             else
                 after
@@ -1900,7 +1906,11 @@ stopForEdit model =
     { model
         | playing = False
         , currentTime = 0
-        , simulation = Simulation.setTime 0 model.simulation
+        , simulation =
+            model.simulation
+                |> Simulation.setTime 0
+                |> Simulation.setRequestedMotorIndex model.requestedMotorIndex
+                |> Simulation.setMotorSpeed (model.motorDirection * motorRpm)
         , animated = Animation.none
     }
 
@@ -1915,12 +1925,18 @@ startPlaying model =
 
     else
         let
+            prepSim =
+                model.simulation
+                    |> Simulation.setTime 0
+                    |> Simulation.setRequestedMotorIndex model.requestedMotorIndex
+                    |> Simulation.setMotorSpeed (model.motorDirection * motorRpm)
+
             ( simulation, _ ) =
                 Simulation.analyse
                     { lines = Document.toLines model.studio.document
                     , cache = model.studio.viewport.partCache
                     }
-                    (Simulation.setTime 0 model.simulation)
+                    prepSim
 
             gears =
                 simulation.gearGraph
@@ -1988,6 +2004,41 @@ step msg model =
 
             else
                 ( startPlaying model, Cmd.none )
+
+        ToggleMotorDirection ->
+            let
+                newDir =
+                    -model.motorDirection
+
+                newSim =
+                    model.simulation
+                        |> Simulation.setMotorSpeed (newDir * motorRpm)
+                        |> Simulation.setTime model.currentTime
+            in
+            ( { model
+                | motorDirection = newDir
+                , simulation = newSim
+              }
+            , Cmd.none
+            )
+
+        SetMotorGear maybeGid ->
+            let
+                machine =
+                    Machine.analyseMachineWithMotor maybeGid model.studio.document model.studio.viewport.partCache
+
+                baseModel =
+                    { model
+                        | requestedMotorIndex = maybeGid
+                        , machine = machine
+                        , simulation = Simulation.setRequestedMotorIndex maybeGid model.simulation
+                    }
+            in
+            if model.playing then
+                ( startPlaying (stopForEdit baseModel), Cmd.none )
+
+            else
+                ( baseModel, Cmd.none )
 
         AddPart item ->
             if remainingForItem model item <= 0 then
@@ -3190,6 +3241,13 @@ applyShortcut keyEvent ( model, cmd ) =
                 in
                 ( next, Cmd.batch [ cmd, actionCmd ] )
 
+            Just PlayShortcuts.ToggleMotorDirection ->
+                let
+                    ( next, actionCmd ) =
+                        update ToggleMotorDirection model
+                in
+                ( next, Cmd.batch [ cmd, actionCmd ] )
+
             Nothing ->
                 case ViewportShortcuts.actionFor (shortcutContext model) keyEvent of
                     Just action ->
@@ -3421,7 +3479,7 @@ viewNormalBuilder model =
                 Nothing ->
                     text ""
             , if technicMode model then
-                playButton model.language model.playing
+                technicControls model
 
               else
                 text ""
@@ -5678,6 +5736,135 @@ playButton lang playing =
          else
             [ Icon.feather "play", text (I18n.headerPlay lang) ]
         )
+
+
+technicControls : Model -> Html Msg
+technicControls model =
+    div
+        [ Attr.style "display" "flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "gap" "0.375rem"
+        ]
+        [ playButton model.language model.playing
+        , motorDirectionButton model.motorDirection
+        , motorSelectorButton model
+        ]
+
+
+motorDirectionButton : Float -> Html Msg
+motorDirectionButton direction =
+    button
+        [ onClick ToggleMotorDirection
+        , Attr.title "Reverse Motor Direction (R)"
+        , Attr.attribute "aria-label" "Reverse Motor Direction"
+        , Attr.style "padding" "0.375rem 0.625rem"
+        , Attr.style "font-size" "1rem"
+        , Attr.style "font-weight" "700"
+        , Attr.style "border" "none"
+        , Attr.style "border-radius" "0.375rem"
+        , Attr.style "background" "rgba(255, 255, 255, 0.15)"
+        , Attr.style "color" "var(--color-text-on-dark)"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "pointer-events" "auto"
+        , Attr.style "display" "flex"
+        , Attr.style "flex-shrink" "0"
+        , Attr.style "align-items" "center"
+        , Attr.class "touch-target"
+        ]
+        [ text
+            (if direction >= 0 then
+                "⟳"
+
+             else
+                "⟲"
+            )
+        ]
+
+
+motorSelectorButton : Model -> Html Msg
+motorSelectorButton model =
+    if List.isEmpty model.machine.gears then
+        text ""
+
+    else
+        let
+            label =
+                case model.requestedMotorIndex of
+                    Nothing ->
+                        case model.machine.motorGearId of
+                            Just activeId ->
+                                "⚡ Auto (#" ++ String.fromInt (activeId + 1) ++ ")"
+
+                            Nothing ->
+                                "⚡ Auto"
+
+                    Just reqId ->
+                        let
+                            specLabel =
+                                model.machine.gears
+                                    |> List.filter (\g -> g.id == reqId)
+                                    |> List.head
+                                    |> Maybe.map (\g -> String.fromInt g.spec.teeth ++ "T")
+                                    |> Maybe.withDefault ("#" ++ String.fromInt (reqId + 1))
+                        in
+                        "⚡ Motor: " ++ specLabel
+
+            nextId =
+                nextMotorGear model.requestedMotorIndex model.machine.gears
+        in
+        button
+            [ onClick (SetMotorGear nextId)
+            , Attr.title "Select Motor Gear (click to cycle)"
+            , Attr.attribute "aria-label" "Select Motor Gear"
+            , Attr.style "padding" "0.375rem 0.625rem"
+            , Attr.style "font-size" "0.875rem"
+            , Attr.style "font-weight" "600"
+            , Attr.style "border" "none"
+            , Attr.style "border-radius" "0.375rem"
+            , Attr.style "background"
+                (if model.requestedMotorIndex /= Nothing then
+                    "rgba(255, 193, 7, 0.3)"
+
+                 else
+                    "rgba(255, 255, 255, 0.15)"
+                )
+            , Attr.style "color" "var(--color-text-on-dark)"
+            , Attr.style "cursor" "pointer"
+            , Attr.style "pointer-events" "auto"
+            , Attr.style "display" "flex"
+            , Attr.style "flex-shrink" "0"
+            , Attr.style "align-items" "center"
+            , Attr.class "touch-target"
+            ]
+            [ text label ]
+
+
+nextMotorGear : Maybe Int -> List { a | id : Int } -> Maybe Int
+nextMotorGear current gears =
+    case gears of
+        [] ->
+            Nothing
+
+        first :: _ ->
+            case current of
+                Nothing ->
+                    Just first.id
+
+                Just currId ->
+                    let
+                        findNext list =
+                            case list of
+                                [] ->
+                                    Nothing
+
+                                g :: rest ->
+                                    if g.id == currId then
+                                        List.head rest |> Maybe.map .id
+
+                                    else
+                                        findNext rest
+                    in
+                    findNext gears
 
 
 {-| Main application program.

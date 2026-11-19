@@ -27,6 +27,7 @@ type Action
     = ToggleGlue
     | SelectNext
     | SelectPrevious
+    | ToggleMotorDirection
 
 
 {-| The Brick Play action for a key press, if any. `glueEditable` is true in free
@@ -52,6 +53,9 @@ actionFor context event =
 
                 else
                     Nothing
+
+            "r" ->
+                Just ToggleMotorDirection
 
             "Tab" ->
                 if isControlTarget event then
