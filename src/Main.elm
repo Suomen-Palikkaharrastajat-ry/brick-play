@@ -4631,7 +4631,7 @@ bitDragRow model =
     else
         let
             active =
-                Core.fineMove model.studio
+                Core.isBitDrag model.studio
         in
         div
             [ Attr.style "display" "flex"
