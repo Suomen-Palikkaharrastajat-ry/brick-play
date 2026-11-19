@@ -1,7 +1,7 @@
 {
   "name": "Palikkaleikki",
   "short_name": "Palikkaleikki",
-  "description": "Rakenna vapaasti virtuaalisilla palikoilla ja kokeile yhdessä pyöriviä Technic-hammaspyöriä suoraan selaimessasi.",
+  "description": "Rakenna virtuaalisilla palikoilla suoraan selaimessasi.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
