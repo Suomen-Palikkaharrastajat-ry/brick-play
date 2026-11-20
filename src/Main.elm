@@ -3,6 +3,7 @@ module Main exposing
     , Model
     , Msg(..)
     , Participant
+    , SnapshotMotion(..)
     , accomplishmentBanner
     , accomplishmentBannerIn
     , clearable
@@ -20,6 +21,10 @@ module Main exposing
     , remainingCount
     , remainingForItem
     , shareHash
+    , snapshotAnimationMotion
+    , snapshotAnimationPlan
+    , snapshotFrameStart
+    , snapshotFrameTime
     , subscriptions
     , swatchBackground
     , technicMode
@@ -2345,68 +2350,42 @@ step msg model =
                         |> Maybe.map SnapshotModal.effectiveFilename
                         |> Maybe.withDefault "brick-play-render.png"
 
-                ( sim, anim ) =
-                    activeSimulationForAnimation model
-
-                hasTurningMotors =
-                    not (Set.isEmpty anim.gears)
-
-                viewportToUse =
-                    if hasTurningMotors then
-                        Viewport.setHiddenSources anim.sources model.studio.viewport
-
-                    else
-                        snapshotViewport model
-
-                animationWithFrames =
+                -- An animation follows `snapshotAnimationPlan`. A still draws the
+                -- gears that turn from the simulation at the current time, with
+                -- their static copies hidden.
+                ( hiddenSources, baseExtraTriangles, animation ) =
                     case animConfig of
                         Just cfg ->
-                            if hasTurningMotors then
-                                let
-                                    totalFrames =
-                                        max 1 (round (cfg.durationSeconds * toFloat cfg.fps))
-
-                                    frameTrianglesFor i =
-                                        let
-                                            t =
-                                                model.currentTime + (toFloat i * cfg.durationSeconds / toFloat totalFrames)
-
-                                            simAtT =
-                                                Simulation.setTime t sim
-                                        in
-                                        Simulation.snapshotTrianglesFor anim.gears simAtT
-
-                                    frames =
-                                        List.range 0 (totalFrames - 1)
-                                            |> List.map frameTrianglesFor
-                                in
-                                Just
-                                    { fps = cfg.fps
-                                    , durationSeconds = cfg.durationSeconds
-                                    , framesExtraTriangles = Just frames
-                                    }
-
-                            else
-                                Just
-                                    { fps = cfg.fps
-                                    , durationSeconds = cfg.durationSeconds
-                                    , framesExtraTriangles = Nothing
-                                    }
+                            let
+                                plan =
+                                    snapshotAnimationPlan model cfg
+                            in
+                            ( plan.hiddenSources
+                            , plan.baseExtraTriangles
+                            , Just
+                                { fps = cfg.fps
+                                , durationSeconds = cfg.durationSeconds
+                                , framesExtraTriangles = plan.framesExtraTriangles
+                                }
+                            )
 
                         Nothing ->
-                            Nothing
+                            let
+                                ( sim, anim ) =
+                                    activeSimulationForAnimation model
+                            in
+                            if Set.isEmpty anim.gears then
+                                ( (activeAnimated model).sources, snapshotTriangles model, Nothing )
 
-                baseExtraTriangles =
-                    if hasTurningMotors then
-                        case animConfig of
-                            Just _ ->
-                                []
+                            else
+                                ( anim.sources, Simulation.snapshotTrianglesFor anim.gears sim, Nothing )
 
-                            Nothing ->
-                                Simulation.snapshotTrianglesFor anim.gears sim
+                viewportToUse =
+                    if Set.isEmpty hiddenSources then
+                        model.studio.viewport
 
                     else
-                        snapshotTriangles model
+                        Viewport.setHiddenSources hiddenSources model.studio.viewport
             in
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop >> SnapshotModal.startRendering) model.snapshotModal }
             , Ports.captureRender
@@ -2418,7 +2397,7 @@ step msg model =
                     , width = Just dims.width
                     , height = Just dims.height
                     , timeBudgetMs = Just dims.timeBudgetMs
-                    , animation = animationWithFrames
+                    , animation = animation
                     }
                     viewportToUse
                 )
@@ -3210,6 +3189,129 @@ activeAnimated model =
 
     else
         Animation.none
+
+
+{-| What a snapshot animation shows: a machine whose motor turns something on
+screen runs it in front of a still camera (`MotorMotion`); anything else turns
+a full 360° in front of the camera (`TurntableMotion`).
+-}
+type SnapshotMotion
+    = MotorMotion
+    | TurntableMotion
+
+
+{-| How a snapshot animation of the model is drawn:
+
+  - `motion`: `MotorMotion` exactly when some gear will turn in the frames,
+    that is when the animated gear set of `activeSimulationForAnimation` is not
+    empty. That set holds the gears in the motor's train that have a mesh and
+    an unglued main-model placement, so a fixed (glued) build, gears inside a
+    submodel, gears whose parts have not loaded, or a machine without a
+    motor-capable gear give `TurntableMotion`. A stopped motor (speed 0) still
+    gives `MotorMotion`: its frames run at `motorRpm` (`snapshotFrameStart`).
+  - `framesExtraTriangles`: for a motor, the turning gears and driven parts at
+    each of the `fps × durationSeconds` frames (`snapshotFrameTime`); `Nothing`
+    for a turntable.
+  - `hiddenSources`: the placements whose static copies are hidden because
+    the frames draw them (motor), or those `snapshotViewport` hides
+    (turntable).
+  - `baseExtraTriangles`: triangles drawn in every frame on top of the static
+    scene: none for a motor, `snapshotTriangles` for a turntable.
+
+-}
+snapshotAnimationPlan :
+    Model
+    -> { a | fps : Int, durationSeconds : Float, speedMultiplier : Float }
+    ->
+        { motion : SnapshotMotion
+        , framesExtraTriangles : Maybe (List (List Float))
+        , hiddenSources : Set.Set Int
+        , baseExtraTriangles : List Float
+        }
+snapshotAnimationPlan model cfg =
+    let
+        ( sim, anim ) =
+            activeSimulationForAnimation model
+    in
+    if Set.isEmpty anim.gears then
+        { motion = TurntableMotion
+        , framesExtraTriangles = Nothing
+        , hiddenSources = (activeAnimated model).sources
+        , baseExtraTriangles = snapshotTriangles model
+        }
+
+    else
+        let
+            totalFrames =
+                max 1 (round (cfg.durationSeconds * toFloat cfg.fps))
+
+            ( speedOverride, startTime ) =
+                snapshotFrameStart { motorSpeed = model.motorSpeed, currentTime = model.currentTime }
+
+            simForFrames =
+                case speedOverride of
+                    Just rpm ->
+                        Simulation.setMotorSpeed rpm sim
+
+                    Nothing ->
+                        sim
+
+            frameTrianglesFor i =
+                let
+                    t =
+                        snapshotFrameTime
+                            { startTime = startTime
+                            , speedMultiplier = cfg.speedMultiplier
+                            , durationSeconds = cfg.durationSeconds
+                            , totalFrames = totalFrames
+                            }
+                            i
+                in
+                Simulation.snapshotTrianglesFor anim.gears (Simulation.setTime t simForFrames)
+        in
+        { motion = MotorMotion
+        , framesExtraTriangles = Just (List.map frameTrianglesFor (List.range 0 (totalFrames - 1)))
+        , hiddenSources = anim.sources
+        , baseExtraTriangles = []
+        }
+
+
+{-| The animation kind a snapshot of the current model gets (see
+`snapshotAnimationPlan`).
+-}
+snapshotAnimationMotion : Model -> SnapshotMotion
+snapshotAnimationMotion model =
+    if Set.isEmpty (Tuple.second (activeSimulationForAnimation model)).gears then
+        TurntableMotion
+
+    else
+        MotorMotion
+
+
+{-| Simulation time of frame `i` of a snapshot animation with `totalFrames`
+frames. The motor keeps its real speed, so frame 0 is the pose on screen
+(`startTime`), and slow motion stretches time instead: the animation covers
+`speedMultiplier * durationSeconds` seconds of simulation in
+`durationSeconds` of playback.
+-}
+snapshotFrameTime : { startTime : Float, speedMultiplier : Float, durationSeconds : Float, totalFrames : Int } -> Int -> Float
+snapshotFrameTime cfg i =
+    cfg.startTime + toFloat i * cfg.speedMultiplier * cfg.durationSeconds / toFloat (max 1 cfg.totalFrames)
+
+
+{-| Where the frames of a snapshot animation start: a motor speed override
+(`Nothing` keeps the simulation's speed) and the start time. A running motor
+starts at the current time, so frame 0 matches the screen. A stopped motor
+would not turn at all, so the frames use the default `motorRpm` from time 0,
+where the gears sit at the angle shown on screen.
+-}
+snapshotFrameStart : { motorSpeed : Float, currentTime : Float } -> ( Maybe Float, Float )
+snapshotFrameStart { motorSpeed, currentTime } =
+    if motorSpeed == 0 then
+        ( Just motorRpm, 0 )
+
+    else
+        ( Nothing, currentTime )
 
 
 {-| Simulation model and animated state for animation rendering: if the machine

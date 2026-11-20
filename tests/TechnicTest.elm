@@ -18,11 +18,12 @@ import Html.Attributes as Attr
 import I18n
 import LDraw.Document as Document
 import LDraw.Resolve exposing (PartStatus(..))
-import Main exposing (Flags, Model, Msg(..), accomplishmentBanner, init, remainingForItem, shareHash, technicMode, thumbnailRequests, update, view, viewToast)
+import Main exposing (Flags, Model, Msg(..), SnapshotMotion(..), accomplishmentBanner, init, remainingForItem, shareHash, snapshotAnimationMotion, snapshotAnimationPlan, snapshotFrameStart, snapshotFrameTime, technicMode, thumbnailRequests, update, view, viewToast)
 import Math.Matrix4 as Mat4
 import Math.Vector3 as Vec3 exposing (vec3)
 import Render.Camera as Camera
 import Set
+import Simulation
 import Studio.Core as Core
 import Studio.DragPlane as DragPlane
 import Studio.Edit as Edit exposing (NewPart)
@@ -1424,6 +1425,154 @@ snapshotTests =
                     , \_ -> Expect.equal True (rendering.snapshotModal /= Nothing)
                     ]
                     ()
+        , test "snapshot animation frames start at the on-screen time and stretch time by the speed multiplier" <|
+            \_ ->
+                let
+                    cfg =
+                        { startTime = 1.5, speedMultiplier = 0.5, durationSeconds = 2, totalFrames = 20 }
+                in
+                Expect.equal [ 1.5, 2.0, 2.5 ] (List.map (snapshotFrameTime cfg) [ 0, 10, 20 ])
+        , test "snapshot animation frames keep the real motor speed while the motor runs" <|
+            \_ ->
+                Expect.equal ( Nothing, 3.25 ) (snapshotFrameStart { motorSpeed = -12, currentTime = 3.25 })
+        , test "snapshot animation frames of a stopped motor use the default speed from time 0" <|
+            \_ ->
+                Expect.equal ( Just 30, 0 ) (snapshotFrameStart { motorSpeed = 0, currentTime = 3.25 })
+        , snapshotMotionTests
+        ]
+
+
+{-| A model whose motor turns something animates it in front of a still camera;
+anything else turns a full circle. The choice follows the gears that will turn
+in the frames: not the motor speed or playback, but a glued build, or gear
+parts that have not loaded, give a turntable.
+-}
+snapshotMotionTests : Test
+snapshotMotionTests =
+    let
+        twin24Model =
+            "1 1 0 -60 -20 0 0 -1 0 1 0 1 0 0 32524.dat\n1 0 0 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 0 60 -60 0 0 0 -1 0 1 0 1 0 0 3705.dat\n1 7 0 -60 0 1 0 0 0 1 0 0 0 1 3648.dat\n1 7 0 -60 20 1 0 0 0 1 0 0 0 1 6590.dat"
+
+        twin24 =
+            init { testFlags | initialHash = "#model=" ++ Url.percentEncode twin24Model ++ "&parts=" ++ Url.percentEncode "3648.dat:7:2,6590.dat:7:2" }
+                |> Tuple.first
+
+        gearPair =
+            init (freeFlags pair8x24) |> Tuple.first
+
+        bricks =
+            init (freeFlags "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat") |> Tuple.first
+
+        -- A shared fixed build: every part glued, so nothing can turn.
+        gluedPair =
+            init { testFlags | initialHash = "#model=" ++ Url.percentEncode ("0 !PALIKKA GLUED\n" ++ pair8x24) ++ "&parts=" }
+                |> Tuple.first
+
+        withoutMeshes model =
+            let
+                studio =
+                    model.studio
+
+                viewport =
+                    studio.viewport
+            in
+            { model | studio = { studio | viewport = { viewport | partCache = Dict.empty } } }
+
+        cfg =
+            { fps = 10, durationSeconds = 2, speedMultiplier = 1 }
+
+        gearPlacements model =
+            Document.mainPlacements model.studio.document |> List.map .id |> Set.fromList
+    in
+    describe "Snapshot animation motion"
+        [ test "the twin 24T example has a turning motor" <|
+            \_ -> Expect.equal MotorMotion (snapshotAnimationMotion twin24)
+        , test "an 8T driving a 24T has a turning motor" <|
+            \_ -> Expect.equal MotorMotion (snapshotAnimationMotion gearPair)
+        , test "plain bricks turn on a turntable" <|
+            \_ -> Expect.equal TurntableMotion (snapshotAnimationMotion bricks)
+        , test "a motor at speed 0 still gives the motor animation, with moving frames" <|
+            \_ ->
+                let
+                    stopped =
+                        update (SetMotorSpeed 0) gearPair |> Tuple.first
+
+                    frames =
+                        (snapshotAnimationPlan stopped cfg).framesExtraTriangles |> Maybe.withDefault []
+                in
+                Expect.equal [ True, True, True ]
+                    [ stopped.motorSpeed == 0
+                    , snapshotAnimationMotion stopped == MotorMotion
+                    , List.head frames /= List.head (List.drop 5 frames)
+                    ]
+        , test "a machine that is not playing, or is playing, gives the motor animation" <|
+            \_ ->
+                let
+                    playing =
+                        update TogglePlay gearPair |> Tuple.first
+                in
+                Expect.equal [ False, True, True, True ]
+                    [ gearPair.playing
+                    , playing.playing
+                    , snapshotAnimationMotion gearPair == MotorMotion
+                    , snapshotAnimationMotion playing == MotorMotion
+                    ]
+        , test "a glued (fixed) gear pair cannot turn, so it gets a turntable" <|
+            \_ -> Expect.equal TurntableMotion (snapshotAnimationMotion gluedPair)
+        , test "gears whose parts have not loaded cannot be drawn turning, so they get a turntable" <|
+            \_ -> Expect.equal TurntableMotion (snapshotAnimationMotion (withoutMeshes gearPair))
+        , test "a motor plan sends one non-empty gear frame per animation frame and hides the turning gears" <|
+            \_ ->
+                let
+                    plan =
+                        snapshotAnimationPlan gearPair cfg
+
+                    frames =
+                        Maybe.withDefault [] plan.framesExtraTriangles
+                in
+                Expect.equal [ True, True, True, True, True ]
+                    [ plan.motion == MotorMotion
+                    , List.length frames == 20
+                    , List.all (not << List.isEmpty) frames
+                    , plan.hiddenSources == gearPlacements gearPair
+                    , List.isEmpty plan.baseExtraTriangles
+                    ]
+        , test "a turntable plan sends no frames and leaves the viewport as it is" <|
+            \_ ->
+                Expect.equal
+                    { motion = TurntableMotion, framesExtraTriangles = Nothing, hiddenSources = Set.empty, baseExtraTriangles = [] }
+                    (snapshotAnimationPlan bricks cfg)
+        , test "a machine paused part-way starts its frames at the paused time" <|
+            \_ ->
+                let
+                    paused =
+                        update TogglePlay gearPair
+                            |> Tuple.first
+                            |> (\m -> { m | currentTime = 1.5 })
+                            |> update TogglePlay
+                            |> Tuple.first
+
+                    framesFrom model =
+                        (snapshotAnimationPlan model cfg).framesExtraTriangles |> Maybe.withDefault []
+                in
+                -- Frame 15 of a run from time 0 is at 0 + 15 × 2 s / 20 = 1.5 s.
+                Expect.equal [ True, True ]
+                    [ not paused.playing && paused.currentTime == 1.5
+                    , List.head (framesFrom paused) == List.head (List.drop 15 (framesFrom gearPair))
+                    ]
+        , test "a requested motor that is not motor-capable falls back to the default motor" <|
+            \_ ->
+                let
+                    model =
+                        init (freeFlags (pair8x24 ++ "\n1 7 300 0 0 1 0 0 0 1 0 0 0 1 99009.dat")) |> Tuple.first
+
+                    plan =
+                        snapshotAnimationPlan { model | requestedMotorIndex = Just 2 } cfg
+                in
+                Expect.equal [ True, True ]
+                    [ plan.motion == MotorMotion
+                    , Maybe.map (List.all (not << List.isEmpty)) plan.framesExtraTriangles == Just True
+                    ]
         ]
 
 
