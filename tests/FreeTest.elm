@@ -370,11 +370,19 @@ freeDockTests =
                 in
                 Query.fromHtml (view model)
                     |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Plate 1 x 1 (Yellow)") ]
-        , test "the five tabs are Bricks, Plates, Slopes & tiles, Brackets & SNOT and Technic" <|
+        , test "the six tabs are Bricks, Plates, Slopes & tiles, Brackets & SNOT, Technic and Vehicles" <|
             \_ ->
                 Query.fromHtml (view (open ""))
                     |> Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ]
-                    |> Query.count (Expect.equal 5)
+                    |> Query.count (Expect.equal 6)
+        , test "the Vehicles tab lists vehicle parts" <|
+            \_ ->
+                let
+                    model =
+                        Tuple.first (update (SetFreeTab FreeCatalog.VehiclesTab) (open ""))
+                in
+                Query.fromHtml (view model)
+                    |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Plate 2 x 2 with 2 Wheel Pins (Yellow)") ]
         , test "the Brackets & SNOT tab lists SNOT bricks and brackets" <|
             \_ ->
                 let

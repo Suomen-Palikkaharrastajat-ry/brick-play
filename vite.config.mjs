@@ -5,7 +5,11 @@ import tailwindcss from '@tailwindcss/vite'
 import elmTailwind from 'elm-tailwind-classes/vite'
 import elm from 'vite-plugin-elm'
 
-const viewerPublic = path.resolve(import.meta.dirname, '../viewer-app/public')
+const candidateRoots = [
+  path.resolve(import.meta.dirname, '../brick-catalog/dist'),
+  path.resolve(import.meta.dirname, '../brick-catalog'),
+  path.resolve(import.meta.dirname, '../viewer-app/public'),
+]
 const mimeTypes = {
   '.ldr': 'text/plain',
   '.mpd': 'text/plain',
@@ -22,18 +26,21 @@ function serveViewerAssets() {
     name: 'serve-viewer-assets',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!fs.existsSync(viewerPublic)) {
-          next()
-          return
-        }
         const url = new URL(req.url ?? '/', 'http://localhost')
-        const file = path.join(viewerPublic, decodeURIComponent(url.pathname))
-        if (!file.startsWith(viewerPublic) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-          next()
+        const pathname = decodeURIComponent(url.pathname)
+
+        for (const root of candidateRoots) {
+          if (!fs.existsSync(root)) continue
+          const file = path.join(root, pathname)
+          if (!file.startsWith(root) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+            continue
+          }
+          res.setHeader('Content-Type', mimeTypes[path.extname(file)] ?? 'application/octet-stream')
+          fs.createReadStream(file).pipe(res)
           return
         }
-        res.setHeader('Content-Type', mimeTypes[path.extname(file)] ?? 'application/octet-stream')
-        fs.createReadStream(file).pipe(res)
+
+        next()
       })
     },
   }

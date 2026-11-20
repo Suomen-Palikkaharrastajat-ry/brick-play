@@ -1599,7 +1599,7 @@ menuTests =
                         , Query.has [ Selector.text "Suomi" ]
                         , Query.has [ Selector.text "In English" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
-                        , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 5)
+                        , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 6)
                         , Query.hasNot [ Selector.attribute (Attr.attribute "aria-orientation" "vertical") ]
                         ]
         ]
@@ -1876,10 +1876,10 @@ technicTests =
                     , ( cleared.studio.gearAlignment, cleared.studio.dragSettles )
                     , ( start.studio.gearAlignment, start.studio.dragSettles )
                     ]
-        , test "free building's dock has five tabs: Bricks, Plates, Slopes & tiles, Brackets & SNOT and Technic" <|
+        , test "free building's dock has six tabs: Bricks, Plates, Slopes & tiles, Brackets & SNOT, Technic and Vehicles" <|
             \_ ->
                 Expect.all
-                    [ \_ -> tabs withGears |> Query.count (Expect.equal 5)
+                    [ \_ -> tabs withGears |> Query.count (Expect.equal 6)
                     , \_ -> Query.fromHtml (view withGears) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Parts") ]
                     ]
                     ()

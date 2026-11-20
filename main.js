@@ -97,7 +97,7 @@ const runtime = initBricksRuntime({
   mode: 'simulator',
   ldrawBase,
   indicesBase,
-  ldrawFallbackBase: import.meta.env.VITE_LDRAW_FALLBACK_BASE ?? '',
+  ldrawFallbackBase: import.meta.env.VITE_LDRAW_FALLBACK_BASE || '/raw',
   defaultModel: '',
   loadModelInJs: false,
   extraFlags: {

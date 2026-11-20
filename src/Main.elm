@@ -5897,6 +5897,9 @@ tabLabelIn lang tab =
         FreeCatalog.TechnicTab ->
             I18n.categoryTechnic lang
 
+        FreeCatalog.VehiclesTab ->
+            I18n.categoryVehicles lang
+
 
 {-| The part search box. Typing searches the whole part library; a form field, so
 no keyboard shortcut fires while it has the focus.

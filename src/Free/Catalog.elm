@@ -38,13 +38,14 @@ type Tab
     | SlopesTab
     | BracketsTab
     | TechnicTab
+    | VehiclesTab
 
 
 {-| The tabs in dock order.
 -}
 tabs : List Tab
 tabs =
-    [ BricksTab, PlatesTab, SlopesTab, BracketsTab, TechnicTab ]
+    [ BricksTab, PlatesTab, SlopesTab, BracketsTab, TechnicTab, VehiclesTab ]
 
 
 {-| The label of a dock tab.
@@ -66,6 +67,9 @@ tabLabel tab =
 
         TechnicTab ->
             "Technic"
+
+        VehiclesTab ->
+            "Vehicles"
 
 
 {-| The entries a tab lists, in order.
@@ -151,6 +155,30 @@ entriesFor tab =
             List.map
                 (\part -> entry part.file part.name part.description)
                 Technic.curatedParts
+
+        VehiclesTab ->
+            [ entry "4600.dat" "Plate 2 x 2 with 2 Wheel Pins" "2 x 2 wheel holder"
+            , entry "4488.dat" "Plate 2 x 2 with 1 Wheel Pin" "2 x 2 wheel holder with pin"
+            , entry "24326.dat" "Car Base 4 x 4 with 4 Wheel Pins" "4 x 4 car base with wheel pins"
+            , entry "4624.dat" "Wheel Rim 8mm D. x 6mm" "Small wheel rim"
+            , entry "3641.dat" "Tyre 15mm D. x 6mm" "Small tire"
+            , entry "6014b.dat" "Wheel Rim 11mm D. x 12mm" "11 x 12 wheel rim"
+            , entry "6015.dat" "Tyre 21mm D. x 12mm Wide" "21 x 12 wide tire"
+            , entry "56890.dat" "Tyre 24mm D. x 14mm Balloon" "24 x 14 balloon tire"
+            , entry "42610.dat" "Technic Wheel Rim 11mm D. x 20mm" "11 x 20 technic wheel rim"
+            , entry "50951.dat" "Tyre 16mm D. x 6mm" "16 x 6 tire"
+            , entry "55982.dat" "Wheel Rim 18mm D. x 14mm with Axle Hole" "18 x 14 wheel rim with axle hole"
+            , entry "55981.dat" "Wheel Rim 18mm D. x 14mm with Pin Hole" "18 x 14 wheel rim with pin hole"
+            , entry "56891.dat" "Tyre 37mm D. x 18mm Off-Road" "37 x 18 off-road tire"
+            , entry "56145.dat" "Wheel Rim 30mm D. x 20mm with 6 Spokes" "30 x 20 wheel rim"
+            , entry "44309.dat" "Tyre 43mm D. x 22mm" "43 x 22 tire"
+            , entry "50745.dat" "Car Mudguard 4 x 2.5" "4 x 2.5 mudguard"
+            , entry "1846.dat" "Car Mudguard 4 x 3 x 1.667" "4 x 3 mudguard"
+            , entry "2352.dat" "Windscreen 2 x 4 x 3" "2 x 4 x 3 windscreen"
+            , entry "3823.dat" "Windscreen 2 x 4 x 2" "2 x 4 x 2 windscreen"
+            , entry "3829c01.dat" "Car Steering Stand and Wheel" "Car steering stand and wheel"
+            , entry "4079.dat" "Minifig Seat 2 x 2" "2 x 2 minifig seat"
+            ]
 
 
 entry : String -> String -> String -> Entry
