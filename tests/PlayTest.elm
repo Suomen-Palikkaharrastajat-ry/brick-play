@@ -1547,6 +1547,44 @@ snapshotTests =
                     [ Maybe.map .progress progressed.snapshotModal == Just { fraction = 0.25, samples = 4 }
                     , Maybe.map .phase failed.snapshotModal == Just (SnapshotModal.Failed "Tracer ran out of memory")
                     ]
+        , test "CaptureSnapshot opens in Framing phase and SnapshotStartRender transitions to Rendering" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( rendering, _ ) =
+                        update (SnapshotStartRender { x = 0.1, y = 0.1, width = 0.8, height = 0.8 }) opened
+
+                    ( ready, _ ) =
+                        update (SnapshotReady { dataUrl = "data:image/png;base64,done", filename = "done.png" }) rendering
+
+                    ( reframed, _ ) =
+                        update SnapshotReframe ready
+                in
+                Expect.all
+                    [ \_ -> Maybe.map SnapshotModal.isFraming opened.snapshotModal |> Expect.equal (Just True)
+                    , \_ -> Maybe.map SnapshotModal.isRendering rendering.snapshotModal |> Expect.equal (Just True)
+                    , \_ -> Maybe.map SnapshotModal.isFraming reframed.snapshotModal |> Expect.equal (Just True)
+                    ]
+                    ()
+        , test "SnapshotSetAspect and SnapshotResetCrop adjust framing crop bounds" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( square, _ ) =
+                        update (SnapshotSetAspect SnapshotModal.Aspect1_1) opened
+
+                    ( reset, _ ) =
+                        update SnapshotResetCrop square
+                in
+                Expect.all
+                    [ \_ -> Maybe.map SnapshotModal.getCrop square.snapshotModal |> Expect.equal (Just { x = (1.0 - 9.0 / 16.0) / 2.0, y = 0.0, width = 9.0 / 16.0, height = 1.0 })
+                    , \_ -> Maybe.map SnapshotModal.getCrop reset.snapshotModal |> Expect.equal (Just SnapshotModal.defaultCrop)
+                    ]
+                    ()
         ]
 
 

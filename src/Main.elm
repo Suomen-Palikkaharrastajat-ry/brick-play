@@ -394,6 +394,11 @@ type Msg
     | ToggleRealistic
     | ToggleFloor
     | CaptureSnapshot
+    | SnapshotStartRender SnapshotModal.CropRect
+    | SnapshotSetCrop SnapshotModal.CropRect
+    | SnapshotSetAspect SnapshotModal.AspectPreset
+    | SnapshotResetCrop
+    | SnapshotReframe
     | SnapshotReady { dataUrl : String, filename : String }
     | SnapshotProgress { fraction : Float, samples : Int }
     | SnapshotFailed String
@@ -2295,15 +2300,41 @@ step msg model =
                 ( model, Cmd.none )
 
             else
-                ( { model | snapshotModal = Just (SnapshotModal.init { filename = "brick-play-render.png" }) }
-                , Ports.captureRender
-                    (Viewport.snapshotRequest
-                        { filename = "brick-play-render.png"
-                        , extraTriangles = snapshotTriangles model
-                        }
-                        model.studio.viewport
-                    )
+                ( { model | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png", previewUrl = Nothing }) }
+                , Cmd.none
                 )
+
+        SnapshotStartRender crop ->
+            ( { model | snapshotModal = Maybe.map SnapshotModal.startRendering model.snapshotModal }
+            , Ports.captureRender
+                (Viewport.snapshotRequestWithCrop
+                    { filename = "brick-play-render.png"
+                    , extraTriangles = snapshotTriangles model
+                    , crop = Just crop
+                    }
+                    model.studio.viewport
+                )
+            )
+
+        SnapshotSetCrop crop ->
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop) model.snapshotModal }
+            , Cmd.none
+            )
+
+        SnapshotSetAspect aspect ->
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.setAspect aspect) model.snapshotModal }
+            , Cmd.none
+            )
+
+        SnapshotResetCrop ->
+            ( { model | snapshotModal = Maybe.map SnapshotModal.resetCrop model.snapshotModal }
+            , Cmd.none
+            )
+
+        SnapshotReframe ->
+            ( { model | snapshotModal = Maybe.map SnapshotModal.reframe model.snapshotModal }
+            , Cmd.none
+            )
 
         SnapshotReady payload ->
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setReady payload) model.snapshotModal }
@@ -3650,9 +3681,14 @@ viewNormalBuilder model =
                 text ""
         , case model.snapshotModal of
             Just modal ->
-                SnapshotModal.viewWithLanguage model.language
+                SnapshotModal.viewFramingWithLanguage model.language
                     { onSave = SnapshotSave
                     , onClose = SnapshotClose
+                    , onStartRender = SnapshotStartRender
+                    , onReframe = SnapshotReframe
+                    , onSetCrop = SnapshotSetCrop
+                    , onSetAspect = SnapshotSetAspect
+                    , onResetCrop = SnapshotResetCrop
                     }
                     modal
 
