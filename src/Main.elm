@@ -2331,21 +2331,31 @@ step msg model =
                     model.snapshotModal
                         |> Maybe.map (SnapshotModal.getShader >> SnapshotModal.shaderToString)
 
-                quality =
+                dims =
                     model.snapshotModal
-                        |> Maybe.map (SnapshotModal.getQuality >> SnapshotModal.qualityDimensions)
+                        |> Maybe.map SnapshotModal.effectiveDimensions
                         |> Maybe.withDefault (SnapshotModal.qualityDimensions SnapshotModal.QualityStandard)
+
+                animation =
+                    model.snapshotModal
+                        |> Maybe.andThen SnapshotModal.getAnimation
+
+                filename =
+                    model.snapshotModal
+                        |> Maybe.map SnapshotModal.effectiveFilename
+                        |> Maybe.withDefault "brick-play-render.png"
             in
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop >> SnapshotModal.startRendering) model.snapshotModal }
             , Ports.captureRender
                 (Viewport.snapshotRequestWithOptions
-                    { filename = "brick-play-render.png"
+                    { filename = filename
                     , extraTriangles = snapshotTriangles model
                     , crop = Just crop
                     , shader = shader
-                    , width = Just quality.width
-                    , height = Just quality.height
-                    , timeBudgetMs = Just quality.timeBudgetMs
+                    , width = Just dims.width
+                    , height = Just dims.height
+                    , timeBudgetMs = Just dims.timeBudgetMs
+                    , animation = animation
                     }
                     (snapshotViewport model)
                 )
