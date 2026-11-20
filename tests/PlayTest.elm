@@ -1679,13 +1679,13 @@ snapshotTests =
                         update CaptureSnapshot selected
 
                     ( withShader, _ ) =
-                        update (SnapshotInteraction (SnapshotModal.SelectShader SnapshotModal.ShaderUsed)) opened
+                        update (SnapshotInteraction (SnapshotModal.SelectShader SnapshotModal.ShaderMatte)) opened
 
                     ( withQuality, _ ) =
                         update (SnapshotInteraction (SnapshotModal.SelectQuality SnapshotModal.QualityHigh)) withShader
                 in
                 Expect.all
-                    [ \_ -> Maybe.map SnapshotModal.getShader withShader.snapshotModal |> Expect.equal (Just SnapshotModal.ShaderUsed)
+                    [ \_ -> Maybe.map SnapshotModal.getShader withShader.snapshotModal |> Expect.equal (Just SnapshotModal.ShaderMatte)
                     , \_ -> Maybe.map SnapshotModal.getQuality withQuality.snapshotModal |> Expect.equal (Just SnapshotModal.QualityHigh)
                     ]
                     ()
