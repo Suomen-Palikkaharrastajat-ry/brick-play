@@ -24,6 +24,7 @@ import Main
         , parseReverseParticipantRoom
         , remainingCount
         , shareHash
+        , swatchBackground
         , thumbnailRequests
         , update
         , view
@@ -1671,6 +1672,37 @@ snapshotTests =
 
                     Nothing ->
                         Expect.fail "Expected snapshotModal to be present"
+        , test "SnapshotInteraction SelectShader and SelectQuality update presets on the modal" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( withShader, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectShader SnapshotModal.ShaderUsed)) opened
+
+                    ( withQuality, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectQuality SnapshotModal.QualityHigh)) withShader
+                in
+                Expect.all
+                    [ \_ -> Maybe.map SnapshotModal.getShader withShader.snapshotModal |> Expect.equal (Just SnapshotModal.ShaderUsed)
+                    , \_ -> Maybe.map SnapshotModal.getQuality withQuality.snapshotModal |> Expect.equal (Just SnapshotModal.QualityHigh)
+                    ]
+                    ()
+        , test "metallic swatches in palette render with metallic linear gradient" <|
+            \_ ->
+                let
+                    chromeGoldBg =
+                        swatchBackground 334
+
+                    pearlGoldBg =
+                        swatchBackground 297
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True (String.startsWith "linear-gradient" chromeGoldBg)
+                    , \_ -> Expect.equal True (String.startsWith "linear-gradient" pearlGoldBg)
+                    ]
+                    ()
         ]
 
 

@@ -14,12 +14,14 @@ module Main exposing
     , isParticipantDimmed
     , kitItemName
     , main
+    , paintColours
     , parseReverseHostRoom
     , parseReverseParticipantRoom
     , remainingCount
     , remainingForItem
     , shareHash
     , subscriptions
+    , swatchBackground
     , technicMode
     , thumbnailRequests
     , update
@@ -115,6 +117,7 @@ import Http
 import I18n exposing (Language(..))
 import Json.Decode as Decode
 import Json.Encode as Encode
+import LDraw.ColorData as ColorData
 import LDraw.Colors as Colors
 import LDraw.Connectivity as Connectivity
 import LDraw.Document as Document
@@ -348,6 +351,16 @@ paintColours =
     , 52
     , 10375
     , 293
+
+    -- Metallic / Chrome / Pearl colors
+    , 334 -- Chrome Gold
+    , 383 -- Chrome Silver
+    , 80 -- Metallic Silver
+    , 82 -- Metallic Gold
+    , 300 -- Metallic Copper
+    , 297 -- Pearl Gold
+    , 315 -- Flat Silver
+    , 316 -- Titanium Metallic
     ]
 
 
@@ -2313,12 +2326,26 @@ step msg model =
                 )
 
         SnapshotStartRender crop ->
-            ( { model | snapshotModal = Maybe.map SnapshotModal.startRendering model.snapshotModal }
+            let
+                shader =
+                    model.snapshotModal
+                        |> Maybe.map (SnapshotModal.getShader >> SnapshotModal.shaderToString)
+
+                quality =
+                    model.snapshotModal
+                        |> Maybe.map (SnapshotModal.getQuality >> SnapshotModal.qualityDimensions)
+                        |> Maybe.withDefault (SnapshotModal.qualityDimensions SnapshotModal.QualityStandard)
+            in
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop >> SnapshotModal.startRendering) model.snapshotModal }
             , Ports.captureRender
-                (Viewport.snapshotRequestWithCrop
+                (Viewport.snapshotRequestWithOptions
                     { filename = "brick-play-render.png"
                     , extraTriangles = snapshotTriangles model
                     , crop = Just crop
+                    , shader = shader
+                    , width = Just quality.width
+                    , height = Just quality.height
+                    , timeBudgetMs = Just quality.timeBudgetMs
                     }
                     (snapshotViewport model)
                 )
@@ -5670,32 +5697,125 @@ swatch chosen code =
 
 
 {-| A swatch's CSS colour, from the colour table the 3D view uses.
+For metallic, chrome, and pearl finishes, applies a specular sheen gradient.
 -}
 swatchBackground : Int -> String
 swatchBackground code =
     let
         rgba =
             Colors.resolveColor code 16
-    in
-    if rgba.alpha < 0.99 then
-        "rgba("
-            ++ String.fromInt (round (rgba.r * 255))
-            ++ ", "
-            ++ String.fromInt (round (rgba.g * 255))
-            ++ ", "
-            ++ String.fromInt (round (rgba.b * 255))
-            ++ ", "
-            ++ String.fromFloat rgba.alpha
-            ++ ")"
 
-    else
-        "rgb("
-            ++ String.fromInt (round (rgba.r * 255))
-            ++ ", "
-            ++ String.fromInt (round (rgba.g * 255))
-            ++ ", "
-            ++ String.fromInt (round (rgba.b * 255))
-            ++ ")"
+        rInt =
+            round (rgba.r * 255)
+
+        gInt =
+            round (rgba.g * 255)
+
+        bInt =
+            round (rgba.b * 255)
+
+        baseRgb =
+            "rgb(" ++ String.fromInt rInt ++ ", " ++ String.fromInt gInt ++ ", " ++ String.fromInt bInt ++ ")"
+    in
+    case Colors.finishOf code of
+        ColorData.Chrome ->
+            let
+                lightR =
+                    String.fromInt (min 255 (round (rgba.r * 255 * 1.35 + 40)))
+
+                lightG =
+                    String.fromInt (min 255 (round (rgba.g * 255 * 1.35 + 40)))
+
+                lightB =
+                    String.fromInt (min 255 (round (rgba.b * 255 * 1.35 + 40)))
+
+                lighterHighlight =
+                    "rgb(" ++ lightR ++ ", " ++ lightG ++ ", " ++ lightB ++ ")"
+
+                darkR =
+                    String.fromInt (round (rgba.r * 255 * 0.65))
+
+                darkG =
+                    String.fromInt (round (rgba.g * 255 * 0.65))
+
+                darkB =
+                    String.fromInt (round (rgba.b * 255 * 0.65))
+
+                darkerShade =
+                    "rgb(" ++ darkR ++ ", " ++ darkG ++ ", " ++ darkB ++ ")"
+            in
+            "linear-gradient(135deg, " ++ lighterHighlight ++ " 0%, " ++ baseRgb ++ " 40%, " ++ darkerShade ++ " 75%, " ++ lighterHighlight ++ " 100%)"
+
+        ColorData.Metal ->
+            let
+                lightR =
+                    String.fromInt (min 255 (round (rgba.r * 255 * 1.25 + 25)))
+
+                lightG =
+                    String.fromInt (min 255 (round (rgba.g * 255 * 1.25 + 25)))
+
+                lightB =
+                    String.fromInt (min 255 (round (rgba.b * 255 * 1.25 + 25)))
+
+                lighterHighlight =
+                    "rgb(" ++ lightR ++ ", " ++ lightG ++ ", " ++ lightB ++ ")"
+
+                darkR =
+                    String.fromInt (round (rgba.r * 255 * 0.7))
+
+                darkG =
+                    String.fromInt (round (rgba.g * 255 * 0.7))
+
+                darkB =
+                    String.fromInt (round (rgba.b * 255 * 0.7))
+
+                darkerShade =
+                    "rgb(" ++ darkR ++ ", " ++ darkG ++ ", " ++ darkB ++ ")"
+            in
+            "linear-gradient(135deg, " ++ lighterHighlight ++ " 0%, " ++ baseRgb ++ " 45%, " ++ darkerShade ++ " 75%, " ++ lighterHighlight ++ " 100%)"
+
+        ColorData.Pearl ->
+            let
+                lightR =
+                    String.fromInt (min 255 (round (rgba.r * 255 * 1.2 + 20)))
+
+                lightG =
+                    String.fromInt (min 255 (round (rgba.g * 255 * 1.2 + 20)))
+
+                lightB =
+                    String.fromInt (min 255 (round (rgba.b * 255 * 1.2 + 20)))
+
+                lighterHighlight =
+                    "rgb(" ++ lightR ++ ", " ++ lightG ++ ", " ++ lightB ++ ")"
+
+                darkR =
+                    String.fromInt (round (rgba.r * 255 * 0.78))
+
+                darkG =
+                    String.fromInt (round (rgba.g * 255 * 0.78))
+
+                darkB =
+                    String.fromInt (round (rgba.b * 255 * 0.78))
+
+                darkerShade =
+                    "rgb(" ++ darkR ++ ", " ++ darkG ++ ", " ++ darkB ++ ")"
+            in
+            "linear-gradient(135deg, " ++ lighterHighlight ++ " 0%, " ++ baseRgb ++ " 50%, " ++ darkerShade ++ " 80%, " ++ lighterHighlight ++ " 100%)"
+
+        _ ->
+            if rgba.alpha < 0.99 then
+                "rgba("
+                    ++ String.fromInt rInt
+                    ++ ", "
+                    ++ String.fromInt gInt
+                    ++ ", "
+                    ++ String.fromInt bInt
+                    ++ ", "
+                    ++ String.fromFloat rgba.alpha
+                    ++ ")"
+
+            else
+                baseRgb
 
 
 {-| The free dock's tabs, in a row. The search results replace the cards while a
