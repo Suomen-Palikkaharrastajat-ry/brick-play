@@ -8,6 +8,7 @@ port module Ports exposing
     , copyTextToClipboard
     , copyToClipboard
     , downloadStudioIo
+    , dropReverseParticipant
     , geometryFlattenFailed
     , geometryFlattened
     , liveAnimationReceived
@@ -223,3 +224,8 @@ port reverseParticipantUpdated : ({ id : String, name : String, bytes : List Int
 {-| Reverse Host: Participant disconnected.
 -}
 port reverseParticipantLeft : (String -> msg) -> Sub msg
+
+
+{-| Reverse Host: Drop / remove a participant and close their WebRTC connection.
+-}
+port dropReverseParticipant : String -> Cmd msg

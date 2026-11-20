@@ -1405,6 +1405,45 @@ reverseHostTests =
                         Expect.equal False (Dict.member "viewer-1" modelCleaned.participants)
                     ]
                     ()
+        , test "manual participant removal button drops participant from grid and clears inspected participant" <|
+            \_ ->
+                let
+                    ( model0, _ ) =
+                        init { testFlags | initialHash = "#/grid/ROOM123" }
+
+                    ( model1, _ ) =
+                        update
+                            (ReverseParticipantUpdated
+                                { id = "viewer-1"
+                                , name = "Liisa"
+                                , bytes = []
+                                , thumbnail = ""
+                                , brickCount = 5
+                                , lastSeen = 100000
+                                }
+                            )
+                            model0
+
+                    ( modelInspecting, _ ) =
+                        update (InspectParticipant (Just "viewer-1")) model1
+
+                    ( modelRemoved, _ ) =
+                        update (RemoveParticipant "viewer-1") modelInspecting
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view model1)
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                            |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "remove-participant-btn") ]
+                    , \_ ->
+                        Expect.equal False (Dict.member "viewer-1" modelRemoved.participants)
+                    , \_ ->
+                        Expect.equal Nothing modelRemoved.inspectedParticipant
+                    , \_ ->
+                        Query.fromHtml (view modelRemoved)
+                            |> Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "participant-card") ]
+                    ]
+                    ()
         , test "switching between grid view and 3D inspector via InspectParticipant" <|
             \_ ->
                 let

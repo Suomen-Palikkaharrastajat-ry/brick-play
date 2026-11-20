@@ -454,6 +454,7 @@ type Msg
     | ReverseParticipantLeftAt String Int
     | ReverseHostTick Time.Posix
     | InspectParticipant (Maybe String)
+    | RemoveParticipant String
     | DismissToast Int
     | MenuPicked Msg
     | NoOp
@@ -2975,6 +2976,25 @@ step msg model =
                 Nothing ->
                     ( { model | inspectedParticipant = Nothing }, Cmd.none )
 
+        RemoveParticipant id ->
+            let
+                newParticipants =
+                    Dict.remove id model.participants
+
+                newInspected =
+                    if model.inspectedParticipant == Just id then
+                        Nothing
+
+                    else
+                        model.inspectedParticipant
+            in
+            ( { model
+                | participants = newParticipants
+                , inspectedParticipant = newInspected
+              }
+            , Ports.dropReverseParticipant id
+            )
+
         LiveError err ->
             showToast err model
 
@@ -4010,6 +4030,14 @@ viewParticipantCard model p =
                 En ->
                     "Inspect in 3D"
 
+        removeLabel =
+            case model.language of
+                Fi ->
+                    "Poista osallistuja"
+
+                En ->
+                    "Remove participant"
+
         statusLabel =
             case model.language of
                 Fi ->
@@ -4140,6 +4168,22 @@ viewParticipantCard model p =
                 , Attr.style "color" "var(--color-text-on-dark)"
                 ]
                 [ FeatherIcons.maximize2
+                    |> FeatherIcons.withSize 14
+                    |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
+                ]
+            , -- Top-right overlay: Remove participant button
+              button
+                [ Attr.type_ "button"
+                , Attr.attribute "data-testid" "remove-participant-btn"
+                , Attr.attribute "aria-label" removeLabel
+                , Attr.title removeLabel
+                , onClick (RemoveParticipant p.id)
+                , Attr.class "absolute top-2 right-2 z-10 w-7 h-7 transition cursor-pointer flex items-center justify-center border"
+                , Attr.style "background" "rgba(5, 19, 29, 0.75)"
+                , Attr.style "border-color" "rgba(255, 255, 255, 0.25)"
+                , Attr.style "color" "var(--color-text-on-dark)"
+                ]
+                [ FeatherIcons.x
                     |> FeatherIcons.withSize 14
                     |> FeatherIcons.toHtml [ Attr.attribute "aria-hidden" "true" ]
                 ]

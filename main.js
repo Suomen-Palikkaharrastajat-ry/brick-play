@@ -364,6 +364,12 @@ if (isViewer && viewerRoomId) {
   broadcaster.start().catch((err) => {
     runtime.app?.ports?.broadcastError?.send(err?.message || 'Could not start reverse host broadcast')
   })
+
+  runtime.app?.ports?.dropReverseParticipant?.subscribe((viewerId) => {
+    if (broadcaster && viewerId) {
+      broadcaster.dropViewer(viewerId)
+    }
+  })
 }
 
 initSnapshots(runtime.app?.ports)
