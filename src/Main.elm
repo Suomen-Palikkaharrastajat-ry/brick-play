@@ -418,7 +418,7 @@ type Msg
     | SnapshotResetCrop
     | SnapshotReframe
     | SnapshotReady { dataUrl : String, filename : String }
-    | SnapshotProgress { fraction : Float, samples : Int }
+    | SnapshotProgress Encode.Value
     | SnapshotFailed String
     | SnapshotSave { dataUrl : String, filename : String }
     | SnapshotClose
@@ -2434,7 +2434,7 @@ step msg model =
             )
 
         SnapshotProgress progress ->
-            ( { model | snapshotModal = Maybe.map (SnapshotModal.setProgress progress) model.snapshotModal }
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.setProgressValue progress) model.snapshotModal }
             , Cmd.none
             )
 

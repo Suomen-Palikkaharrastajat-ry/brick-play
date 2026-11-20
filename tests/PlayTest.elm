@@ -8,6 +8,7 @@ import Expect
 import Html exposing (Html)
 import Html.Attributes as Attr
 import I18n
+import Json.Encode as Encode
 import LDraw.Document as Document
 import Main
     exposing
@@ -1578,7 +1579,7 @@ snapshotTests =
                         update CaptureSnapshot selected
 
                     ( progressed, _ ) =
-                        update (SnapshotProgress { fraction = 0.25, samples = 4 }) opened
+                        update (SnapshotProgress (Encode.object [ ( "fraction", Encode.float 0.25 ), ( "samples", Encode.int 4 ) ])) opened
 
                     ( failed, _ ) =
                         update (SnapshotFailed "Tracer ran out of memory") progressed

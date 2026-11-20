@@ -99,9 +99,10 @@ port captureRender : Json.Encode.Value -> Cmd msg
 port cancelSnapshot : () -> Cmd msg
 
 
-{-| Path tracer progress: the fraction done and the samples taken so far.
+{-| Path tracer progress: the fraction done, the samples taken so far, and the
+stage, frame and timing details that `SnapshotModal.setProgressValue` decodes.
 -}
-port snapshotProgress : ({ fraction : Float, samples : Int } -> msg) -> Sub msg
+port snapshotProgress : (Json.Encode.Value -> msg) -> Sub msg
 
 
 {-| The path tracer failed; the string is a message for the user.

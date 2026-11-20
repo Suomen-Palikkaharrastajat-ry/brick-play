@@ -16,6 +16,7 @@ import Gear.Placements as Placements
 import Gear.Types exposing (GearAxis(..), GearHoleKind(..), GearKind(..))
 import Html.Attributes as Attr
 import I18n
+import Json.Encode as Encode
 import LDraw.Document as Document
 import LDraw.Resolve exposing (PartStatus(..))
 import Main exposing (Flags, Model, Msg(..), SnapshotMotion(..), accomplishmentBanner, init, remainingForItem, shareHash, snapshotAnimationMotion, snapshotAnimationPlan, snapshotFrameStart, snapshotFrameTime, technicMode, thumbnailRequests, update, view, viewToast)
@@ -1395,13 +1396,36 @@ snapshotTests =
                         update CaptureSnapshot selected
 
                     ( progressed, _ ) =
-                        update (SnapshotProgress { fraction = 0.25, samples = 4 }) opened
+                        update
+                            (SnapshotProgress
+                                (Encode.object
+                                    [ ( "fraction", Encode.float 0.25 )
+                                    , ( "samples", Encode.int 4 )
+                                    , ( "stage", Encode.string "sampling" )
+                                    , ( "frame", Encode.int 3 )
+                                    , ( "totalFrames", Encode.int 20 )
+                                    , ( "targetSamples", Encode.int 10 )
+                                    , ( "elapsedMs", Encode.int 12000 )
+                                    , ( "etaMs", Encode.int 60000 )
+                                    ]
+                                )
+                            )
+                            opened
 
                     ( failed, _ ) =
                         update (SnapshotFailed "Tracer ran out of memory") progressed
                 in
-                Expect.equal [ True, True ]
+                Expect.equal [ True, True, True ]
                     [ Maybe.map .progress progressed.snapshotModal == Just { fraction = 0.25, samples = 4 }
+                    , Maybe.map .progressDetail progressed.snapshotModal
+                        == Just
+                            { stage = SnapshotModal.StageSampling
+                            , frame = Just 3
+                            , totalFrames = Just 20
+                            , targetSamples = Just 10
+                            , elapsedMs = Just 12000
+                            , etaMs = Just 60000
+                            }
                     , Maybe.map .phase failed.snapshotModal == Just (SnapshotModal.Failed "Tracer ran out of memory")
                     ]
         , test "animation mode targets webp and produces animation request" <|
