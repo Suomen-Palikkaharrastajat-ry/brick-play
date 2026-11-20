@@ -1,7 +1,7 @@
 import './main.css'
 import { strToU8, zipSync } from 'fflate'
 import { initBricksRuntime } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/initBricksRuntime.js'
-import { initSnapshots } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/snapshot.js'
+import { initSnapshots, copyWebglCanvasTo2d } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/snapshot.js'
 import { initThumbnails } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/thumbnail-pipeline.js'
 import { encodeHash, toUint8Array } from './vendor/brick-studio/packages/brick-frame-viewport/runtime/url-hash-codec.js'
 import { Broadcaster, Viewer } from './share.js'
@@ -291,9 +291,22 @@ if (isViewer && viewerRoomId) {
       lastSent = Date.now()
       const canvas = document.querySelector('canvas')
       let thumbnail = ''
-      if (canvas && typeof canvas.toDataURL === 'function') {
+      if (canvas) {
         try {
-          thumbnail = canvas.toDataURL('image/webp', 0.6)
+          const offscreen = document.createElement('canvas')
+          const srcW = canvas.width || canvas.clientWidth || 320
+          const srcH = canvas.height || canvas.clientHeight || 240
+          const maxDim = 320
+          const scale = Math.min(1, maxDim / Math.max(srcW, srcH))
+          offscreen.width = Math.max(1, Math.round(srcW * scale))
+          offscreen.height = Math.max(1, Math.round(srcH * scale))
+          const ctx = offscreen.getContext('2d')
+          if (ctx) {
+            copyWebglCanvasTo2d(canvas, ctx, offscreen.width, offscreen.height, false)
+            thumbnail = offscreen.toDataURL('image/webp', 0.6)
+          } else if (typeof canvas.toDataURL === 'function') {
+            thumbnail = canvas.toDataURL('image/webp', 0.6)
+          }
         } catch {
           thumbnail = ''
         }
