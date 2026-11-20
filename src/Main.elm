@@ -404,6 +404,7 @@ type Msg
     | SnapshotFailed String
     | SnapshotSave { dataUrl : String, filename : String }
     | SnapshotClose
+    | SnapshotInteraction SnapshotModal.InteractionMsg
     | TestCommand Decode.Value
     | GlobePressed ( Float, Float )
     | GlobeMoved ( Float, Float )
@@ -2302,7 +2303,13 @@ step msg model =
 
             else
                 ( { model | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png", previewUrl = Nothing }) }
-                , Cmd.none
+                , Ports.captureRender
+                    (Viewport.snapshotPreviewRequest
+                        { filename = "brick-play-render.png"
+                        , extraTriangles = snapshotTriangles model
+                        }
+                        (snapshotViewport model)
+                    )
                 )
 
         SnapshotStartRender crop ->
@@ -2313,8 +2320,13 @@ step msg model =
                     , extraTriangles = snapshotTriangles model
                     , crop = Just crop
                     }
-                    model.studio.viewport
+                    (snapshotViewport model)
                 )
+            )
+
+        SnapshotInteraction interaction ->
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.handleInteraction interaction) model.snapshotModal }
+            , Cmd.none
             )
 
         SnapshotSetCrop crop ->
@@ -3089,16 +3101,47 @@ placePart file color name model =
     )
 
 
+{-| Active animation state when machine is running in Technic mode.
+-}
+activeAnimated : Model -> Animation.Animated
+activeAnimated model =
+    if technicMode model && Animation.isAnimating { playing = model.playing, currentTime = model.currentTime } then
+        model.animated
+
+    else
+        Animation.none
+
+
+{-| The viewport model for snapshots: hides animated sources so turning gears
+are rendered only by simulation triangles rather than being doubled.
+-}
+snapshotViewport : Model -> Viewport.Model
+snapshotViewport model =
+    let
+        animated =
+            activeAnimated model
+    in
+    if Set.isEmpty animated.sources then
+        model.studio.viewport
+
+    else
+        Viewport.setHiddenSources animated.sources model.studio.viewport
+
+
 {-| The gears and driven parts drawn turning in the snapshot: only in Technic
 mode, where the machine has a simulation to draw.
 -}
 snapshotTriangles : Model -> List Float
 snapshotTriangles model =
-    if technicMode model then
-        Simulation.snapshotTriangles model.simulation
+    let
+        animated =
+            activeAnimated model
+    in
+    if Set.isEmpty animated.gears then
+        []
 
     else
-        []
+        Simulation.snapshotTrianglesFor animated.gears model.simulation
 
 
 {-| Open the context ring on the part under a canvas point (a double-click). Empty
@@ -3709,6 +3752,7 @@ viewNormalBuilder model =
                     , onSetCrop = SnapshotSetCrop
                     , onSetAspect = SnapshotSetAspect
                     , onResetCrop = SnapshotResetCrop
+                    , onInteraction = SnapshotInteraction
                     }
                     modal
 

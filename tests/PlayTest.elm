@@ -1624,6 +1624,53 @@ snapshotTests =
                     , \_ -> Maybe.map SnapshotModal.getCrop reset.snapshotModal |> Expect.equal (Just SnapshotModal.defaultCrop)
                     ]
                     ()
+        , test "SnapshotReady while in Framing updates rough preview without transitioning to Preview" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( ready, _ ) =
+                        update (SnapshotReady { dataUrl = "data:image/png;base64,rough", filename = "brick-play-render.png" }) opened
+                in
+                Expect.all
+                    [ \_ -> Maybe.map SnapshotModal.isFraming ready.snapshotModal |> Expect.equal (Just True)
+                    , \_ -> Maybe.map SnapshotModal.isRendering ready.snapshotModal |> Expect.equal (Just False)
+                    , \_ -> Maybe.map .previewUrl ready.snapshotModal |> Expect.equal (Just (Just "data:image/png;base64,rough"))
+                    ]
+                    ()
+        , test "SnapshotInteraction pans crop box via pointer drag" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( cropped, _ ) =
+                        update (SnapshotSetCrop { x = 0.2, y = 0.2, width = 0.5, height = 0.5 }) opened
+
+                    ( panned, _ ) =
+                        cropped
+                            |> update (SnapshotInteraction (SnapshotModal.PointerDown 1 { x = 0.4, y = 0.4 }))
+                            |> Tuple.first
+                            |> update (SnapshotInteraction (SnapshotModal.PointerMove 1 { x = 0.46, y = 0.47 }))
+                            |> Tuple.first
+                            |> update (SnapshotInteraction (SnapshotModal.PointerUp 1))
+
+                    crop =
+                        Maybe.map SnapshotModal.getCrop panned.snapshotModal
+                in
+                case crop of
+                    Just c ->
+                        Expect.all
+                            [ \_ -> Expect.within (Expect.Absolute 0.001) 0.26 c.x
+                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.27 c.y
+                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.5 c.width
+                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.5 c.height
+                            ]
+                            ()
+
+                    Nothing ->
+                        Expect.fail "Expected snapshotModal to be present"
         ]
 
 
