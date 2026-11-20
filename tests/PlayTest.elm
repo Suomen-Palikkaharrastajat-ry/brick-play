@@ -1572,6 +1572,52 @@ snapshotTests =
                     , afterEscape.snapshotModal == Nothing
                     , Core.hasSelection afterEscape.studio
                     ]
+        , test "while framing, a click and the Delete key leave the model and the selection alone" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    canvas msg =
+                        StudioMsg (Core.ViewportMsg msg)
+
+                    ( clicked, _ ) =
+                        opened
+                            |> update (canvas (Viewport.CanvasPressed ( 0, 0 ) (Viewport.MouseButtonDown 400 300 0 False False)))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.MouseUp 400 300))
+
+                    ( deleted, _ ) =
+                        update (pressKey "Delete") clicked
+                in
+                Expect.all
+                    [ \_ -> deleted.studio.document |> Expect.equal selected.studio.document
+                    , \_ -> deleted.studio.selection |> Expect.equal selected.studio.selection
+                    , \_ -> Maybe.map SnapshotModal.isFraming deleted.snapshotModal |> Expect.equal (Just True)
+                    ]
+                    ()
+        , test "a drag while framing orbits the camera" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    canvas msg =
+                        StudioMsg (Core.ViewportMsg msg)
+
+                    ( dragged, _ ) =
+                        opened
+                            |> update (canvas (Viewport.CanvasPressed ( 0, 0 ) (Viewport.MouseButtonDown 400 300 0 False False)))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.MouseMove 520 290))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.MouseUp 520 290))
+                in
+                Expect.all
+                    [ \_ -> dragged.studio.viewport.camera |> Expect.notEqual opened.studio.viewport.camera
+                    , \_ -> dragged.studio.document |> Expect.equal selected.studio.document
+                    ]
+                    ()
         , test "progress and a failure reach the open snapshot" <|
             \_ ->
                 let
@@ -1588,14 +1634,14 @@ snapshotTests =
                     [ Maybe.map .progress progressed.snapshotModal == Just { fraction = 0.25, samples = 4 }
                     , Maybe.map .phase failed.snapshotModal == Just (SnapshotModal.Failed "Tracer ran out of memory")
                     ]
-        , test "CaptureSnapshot opens in Framing phase and SnapshotStartRender transitions to Rendering" <|
+        , test "CaptureSnapshot opens in Framing phase and SnapshotRender transitions to Rendering" <|
             \_ ->
                 let
                     ( opened, _ ) =
                         update CaptureSnapshot selected
 
                     ( rendering, _ ) =
-                        update (SnapshotStartRender { x = 0.1, y = 0.1, width = 0.8, height = 0.8 }) opened
+                        update SnapshotRender opened
 
                     ( ready, _ ) =
                         update (SnapshotReady { dataUrl = "data:image/png;base64,done", filename = "done.png" }) rendering
@@ -1609,7 +1655,7 @@ snapshotTests =
                     , \_ -> Maybe.map SnapshotModal.isFraming reframed.snapshotModal |> Expect.equal (Just True)
                     ]
                     ()
-        , test "SnapshotSetAspect and SnapshotResetCrop adjust framing crop bounds" <|
+        , test "SnapshotSetAspect squares the camera frame and SnapshotRender renders that frame" <|
             \_ ->
                 let
                     ( opened, _ ) =
@@ -1618,14 +1664,22 @@ snapshotTests =
                     ( square, _ ) =
                         update (SnapshotSetAspect SnapshotModal.Aspect1_1) opened
 
-                    ( reset, _ ) =
-                        update SnapshotResetCrop square
+                    ( rendering, _ ) =
+                        update SnapshotRender square
                 in
-                Expect.all
-                    [ \_ -> Maybe.map SnapshotModal.getCrop square.snapshotModal |> Expect.equal (Just { x = (1.0 - 9.0 / 16.0) / 2.0, y = 0.0, width = 9.0 / 16.0, height = 1.0 })
-                    , \_ -> Maybe.map SnapshotModal.getCrop reset.snapshotModal |> Expect.equal (Just SnapshotModal.defaultCrop)
-                    ]
-                    ()
+                case rendering.snapshotModal of
+                    Just modal ->
+                        Expect.all
+                            [ \_ -> modal.aspect |> Expect.equal SnapshotModal.Aspect1_1
+                            , \_ -> SnapshotModal.isRendering modal |> Expect.equal True
+                            , \_ ->
+                                (modal.crop.width * toFloat rendering.windowWidth)
+                                    |> Expect.within (Expect.Absolute 0.5) (modal.crop.height * toFloat rendering.windowHeight)
+                            ]
+                            ()
+
+                    Nothing ->
+                        Expect.fail "Expected snapshotModal to be present"
         , test "SnapshotReady while in Framing updates rough preview without transitioning to Preview" <|
             \_ ->
                 let
@@ -1641,38 +1695,6 @@ snapshotTests =
                     , \_ -> Maybe.map .previewUrl ready.snapshotModal |> Expect.equal (Just (Just "data:image/png;base64,rough"))
                     ]
                     ()
-        , test "SnapshotInteraction pans crop box via pointer drag" <|
-            \_ ->
-                let
-                    ( opened, _ ) =
-                        update CaptureSnapshot selected
-
-                    ( cropped, _ ) =
-                        update (SnapshotSetCrop { x = 0.2, y = 0.2, width = 0.5, height = 0.5 }) opened
-
-                    ( panned, _ ) =
-                        cropped
-                            |> update (SnapshotInteraction (SnapshotModal.PointerDown 1 { x = 0.4, y = 0.4 }))
-                            |> Tuple.first
-                            |> update (SnapshotInteraction (SnapshotModal.PointerMove 1 { x = 0.46, y = 0.47 }))
-                            |> Tuple.first
-                            |> update (SnapshotInteraction (SnapshotModal.PointerUp 1))
-
-                    crop =
-                        Maybe.map SnapshotModal.getCrop panned.snapshotModal
-                in
-                case crop of
-                    Just c ->
-                        Expect.all
-                            [ \_ -> Expect.within (Expect.Absolute 0.001) 0.26 c.x
-                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.27 c.y
-                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.5 c.width
-                            , \_ -> Expect.within (Expect.Absolute 0.001) 0.5 c.height
-                            ]
-                            ()
-
-                    Nothing ->
-                        Expect.fail "Expected snapshotModal to be present"
         , test "SnapshotInteraction SelectShader and SelectQuality update presets on the modal" <|
             \_ ->
                 let

@@ -1442,7 +1442,7 @@ snapshotTests =
                         { opened | snapshotModal = animModal }
 
                     ( rendering, _ ) =
-                        update (SnapshotStartRender { x = 0.1, y = 0.1, width = 0.8, height = 0.8 }) modelWithAnim
+                        update SnapshotRender modelWithAnim
                 in
                 Expect.all
                     [ \_ -> Expect.equal (Just "brick-play-render.webp") (Maybe.map SnapshotModal.effectiveFilename animModal)

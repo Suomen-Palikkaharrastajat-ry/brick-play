@@ -412,10 +412,8 @@ type Msg
     | ToggleRealistic
     | ToggleFloor
     | CaptureSnapshot
-    | SnapshotStartRender SnapshotModal.CropRect
-    | SnapshotSetCrop SnapshotModal.CropRect
+    | SnapshotRender
     | SnapshotSetAspect SnapshotModal.AspectPreset
-    | SnapshotResetCrop
     | SnapshotReframe
     | SnapshotReady { dataUrl : String, filename : String }
     | SnapshotProgress Encode.Value
@@ -1214,6 +1212,9 @@ update msg model =
             else if closesSnapshot msg model then
                 ( { model | snapshotModal = Nothing }, cancelSnapshotCmd model.snapshotModal )
 
+            else if cameraModal model /= Nothing && isCanvasInput msg then
+                updateCamera msg model
+
             else if closesRing msg model then
                 ( { model | ringPart = Nothing }, Cmd.none )
 
@@ -1400,6 +1401,118 @@ cancelSnapshotCmd modal =
 
         Nothing ->
             Cmd.none
+
+
+{-| The snapshot modal while it shows as the camera overlay on the live view:
+while framing the shot and while rendering it. Afterwards (the result or an
+error) it shows as a dialog.
+-}
+cameraModal : Model -> Maybe SnapshotModal.Model
+cameraModal model =
+    model.snapshotModal
+        |> Maybe.andThen
+            (\modal ->
+                if SnapshotModal.isFraming modal || SnapshotModal.isRendering modal then
+                    Just modal
+
+                else
+                    Nothing
+            )
+
+
+{-| Size of the 3D view in CSS pixels: it fills the window.
+-}
+cameraViewSize : Model -> { width : Int, height : Int }
+cameraViewSize model =
+    { width = model.windowWidth, height = model.windowHeight }
+
+
+{-| Pointer and key input on the 3D view, which the camera overlay takes over.
+-}
+isCanvasInput : Msg -> Bool
+isCanvasInput msg =
+    case msg of
+        StudioMsg (Core.ViewportMsg viewportMessage) ->
+            case viewportMessage of
+                Viewport.CanvasPressed _ _ ->
+                    True
+
+                Viewport.MouseButtonDown _ _ _ _ _ ->
+                    True
+
+                Viewport.MouseMove _ _ ->
+                    True
+
+                Viewport.MouseUp _ _ ->
+                    True
+
+                Viewport.DoubleClick _ _ ->
+                    True
+
+                Viewport.Wheel _ ->
+                    True
+
+                Viewport.TouchStart _ ->
+                    True
+
+                Viewport.TouchMove _ ->
+                    True
+
+                Viewport.TouchEnd _ ->
+                    True
+
+                Viewport.PointerTouchStart _ ->
+                    True
+
+                Viewport.PointerTouchMove _ ->
+                    True
+
+                Viewport.PointerTouchEnd _ ->
+                    True
+
+                Viewport.ContextMenuOpened ->
+                    True
+
+                Viewport.KeyPressed _ ->
+                    True
+
+                Viewport.KeyReleased _ ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+{-| Input on the 3D view with the camera overlay open. While framing it only
+moves the camera, as orbiting, zooming and panning do in the design view: the
+viewport's events (clicks, part grabs, editing keys) are dropped, so nothing
+is selected or edited. While rendering the view does not move, so the frame
+stays on what is being rendered.
+-}
+updateCamera : Msg -> Model -> ( Model, Cmd Msg )
+updateCamera msg model =
+    case ( msg, model.snapshotModal ) of
+        ( StudioMsg (Core.ViewportMsg viewportMessage), Just modal ) ->
+            if SnapshotModal.isFraming modal then
+                let
+                    studio =
+                        model.studio
+
+                    ( viewport, viewportCmd, _ ) =
+                        Viewport.update viewportMessage studio.viewport
+                in
+                ( { model | studio = { studio | viewport = viewport } }
+                , Cmd.map viewportMsg viewportCmd
+                )
+
+            else
+                ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
 
 
 {-| Escape closes an open snapshot modal before anything else sees the key, so
@@ -2320,17 +2433,15 @@ step msg model =
                 ( model, Cmd.none )
 
             else
-                ( { model | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png", previewUrl = Nothing }) }
-                , Ports.captureRender
-                    (Viewport.snapshotPreviewRequest
-                        { filename = "brick-play-render.png"
-                        , extraTriangles = snapshotTriangles model
-                        }
-                        (snapshotViewport model)
-                    )
+                -- The camera overlay frames the live view, so no preview is captured.
+                ( { model
+                    | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png" })
+                    , ringPart = Nothing
+                  }
+                , Cmd.none
                 )
 
-        SnapshotStartRender crop ->
+        SnapshotRender ->
             let
                 shader =
                     model.snapshotModal
@@ -2387,39 +2498,38 @@ step msg model =
                     else
                         Viewport.setHiddenSources hiddenSources model.studio.viewport
             in
-            ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop >> SnapshotModal.startRendering) model.snapshotModal }
-            , Ports.captureRender
-                (Viewport.snapshotRequestWithOptions
-                    { filename = filename
-                    , extraTriangles = baseExtraTriangles
-                    , crop = Just crop
-                    , shader = shader
-                    , width = Just dims.width
-                    , height = Just dims.height
-                    , timeBudgetMs = Just dims.timeBudgetMs
-                    , animation = animation
-                    }
-                    viewportToUse
-                )
-            )
+            case model.snapshotModal of
+                Just modal ->
+                    let
+                        output =
+                            SnapshotModal.frameOutputSize (cameraViewSize model) modal
+                    in
+                    ( { model | snapshotModal = Just (SnapshotModal.startCameraRendering (cameraViewSize model) modal) }
+                    , Ports.captureRender
+                        (Viewport.snapshotFrameRequest
+                            { filename = filename
+                            , extraTriangles = baseExtraTriangles
+                            , crop = SnapshotModal.frameRect (cameraViewSize model) modal
+                            , shader = shader
+                            , width = output.width
+                            , height = output.height
+                            , timeBudgetMs = Just dims.timeBudgetMs
+                            , animation = animation
+                            }
+                            viewportToUse
+                        )
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         SnapshotInteraction interaction ->
             ( { model | snapshotModal = Maybe.map (SnapshotModal.handleInteraction interaction) model.snapshotModal }
             , Cmd.none
             )
 
-        SnapshotSetCrop crop ->
-            ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop) model.snapshotModal }
-            , Cmd.none
-            )
-
         SnapshotSetAspect aspect ->
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setAspect aspect) model.snapshotModal }
-            , Cmd.none
-            )
-
-        SnapshotResetCrop ->
-            ( { model | snapshotModal = Maybe.map SnapshotModal.resetCrop model.snapshotModal }
             , Cmd.none
             )
 
@@ -3867,6 +3977,19 @@ view model =
 viewNormalBuilder : Model -> Html Msg
 viewNormalBuilder model =
     let
+        -- While the camera overlay frames the shot, only the 3D view and the
+        -- overlay show. Hidden parts become empty nodes in place, so the canvas
+        -- keeps its position among the children and is not re-created.
+        camera =
+            cameraModal model /= Nothing
+
+        hideForCamera node =
+            if camera then
+                text ""
+
+            else
+                node
+
         accomplished =
             technicMode model && Machine.isAccomplished model.machine
 
@@ -3885,64 +4008,65 @@ viewNormalBuilder model =
           -- status, first-select hint, touch part name, and accomplishment banner)
           -- grow horizontally beside them, keeping the vertical space above the
           -- brick palette free.
-          header
-            [ Attr.style "position" "absolute"
-            , Attr.style "top" "0.75rem"
-            , Attr.style "left" "0.75rem"
-            , Attr.style "right" "0.75rem"
-            , Attr.style "display" "flex"
-            , Attr.style "flex-wrap" "wrap"
-            , Attr.style "align-items" "center"
-            , Attr.style "gap" "0.5rem"
-            , Attr.style "z-index" "20"
-            , Attr.style "pointer-events" "none"
-            , keepFocusOnCanvas
-            ]
-            [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
-            , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
-            , shareButton model.language
-            , helpButton model.language
-            , if model.liveBroadcasting then
-                livePill model
+          hideForCamera <|
+            header
+                [ Attr.style "position" "absolute"
+                , Attr.style "top" "0.75rem"
+                , Attr.style "left" "0.75rem"
+                , Attr.style "right" "0.75rem"
+                , Attr.style "display" "flex"
+                , Attr.style "flex-wrap" "wrap"
+                , Attr.style "align-items" "center"
+                , Attr.style "gap" "0.5rem"
+                , Attr.style "z-index" "20"
+                , Attr.style "pointer-events" "none"
+                , keepFocusOnCanvas
+                ]
+                [ h1 [ Attr.class "sr-only" ] [ text (I18n.appPlaygroundTitle model.language) ]
+                , HamburgerMenu.viewWithLanguage model.language (menuConfig model)
+                , shareButton model.language
+                , helpButton model.language
+                , if model.liveBroadcasting then
+                    livePill model
 
-              else
-                text ""
-            , case model.reverseParticipantRoom of
-                Just roomId ->
-                    reverseParticipantBadge model roomId
-
-                Nothing ->
+                  else
                     text ""
-            , if technicMode model then
-                technicControls model
+                , case model.reverseParticipantRoom of
+                    Just roomId ->
+                        reverseParticipantBadge model roomId
 
-              else
-                text ""
-            , bitDragRow model
-            , tidyRow model
-            , if technicMode model then
-                gearRow model
+                    Nothing ->
+                        text ""
+                , if technicMode model then
+                    technicControls model
 
-              else
-                text ""
-            , hintRow model
-            , touchLabel model
-            , if accomplished then
-                accomplishmentBannerIn model.language gearCount
+                  else
+                    text ""
+                , bitDragRow model
+                , tidyRow model
+                , if technicMode model then
+                    gearRow model
 
-              else
-                text ""
-            ]
+                  else
+                    text ""
+                , hintRow model
+                , touchLabel model
+                , if accomplished then
+                    accomplishmentBannerIn model.language gearCount
+
+                  else
+                    text ""
+                ]
 
         -- 3D WebGL Canvas
         , Html.map StudioMsg (viewCanvas model)
 
         -- The context ring beside the selected part, over the canvas
-        , ringView model
+        , hideForCamera (ringView model)
 
         -- Camera control: on a wide window the camera globe sits bottom-right,
         -- beside the dock. On a narrow window it shares the bottom row instead.
-        , if isNarrow model then
+        , if isNarrow model || camera then
             text ""
 
           else
@@ -3976,28 +4100,36 @@ viewNormalBuilder model =
             text ""
 
         -- Bottom: the brick palette / kit dock (or narrow row with camera toggle)
-        , bottomArea model
+        , hideForCamera (bottomArea model)
         , case model.toast of
             Just t ->
                 viewToast t.message
 
             Nothing ->
                 text ""
-        , case model.snapshotModal of
-            Just modal ->
+        , case ( cameraModal model, model.snapshotModal ) of
+            ( Just modal, _ ) ->
+                SnapshotModal.viewCameraOverlay model.language
+                    { onClose = SnapshotClose
+                    , onStartRender = SnapshotRender
+                    , onSetAspect = SnapshotSetAspect
+                    , onInteraction = SnapshotInteraction
+                    }
+                    (cameraViewSize model)
+                    modal
+
+            ( Nothing, Just modal ) ->
                 SnapshotModal.viewFramingWithLanguage model.language
                     { onSave = SnapshotSave
                     , onClose = SnapshotClose
-                    , onStartRender = SnapshotStartRender
+                    , onStartRender = SnapshotRender
                     , onReframe = SnapshotReframe
-                    , onSetCrop = SnapshotSetCrop
                     , onSetAspect = SnapshotSetAspect
-                    , onResetCrop = SnapshotResetCrop
                     , onInteraction = SnapshotInteraction
                     }
                     modal
 
-            Nothing ->
+            ( Nothing, Nothing ) ->
                 text ""
         , case model.shareModal of
             Just sm ->
