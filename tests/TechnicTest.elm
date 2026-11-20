@@ -1519,6 +1519,70 @@ menuTests =
                     , \_ -> Expect.equal 30.0 toggled.motorSpeed
                     ]
                     ()
+        , test "merged play/slider control has play/pause without text label and slider in one group" <|
+            \_ ->
+                let
+                    ( initialModel, _ ) =
+                        init (freeFlags pair8x24)
+
+                    rendered =
+                        Query.fromHtml (view initialModel)
+
+                    playBtn =
+                        rendered
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "play-pause-button") ]
+                in
+                Expect.all
+                    [ \_ -> rendered |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "motor-speed-control") ]
+                    , \_ -> rendered |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "motor-speed-slider") ]
+                    , \_ -> rendered |> Query.has [ Selector.attribute (Attr.attribute "data-testid" "motor-speed-label") ]
+                    , \_ -> playBtn |> Query.hasNot [ Selector.text (I18n.headerPlay initialModel.language) ]
+                    , \_ -> playBtn |> Query.has [ Selector.attribute (Attr.attribute "aria-label" (I18n.headerPlay initialModel.language)) ]
+                    ]
+                    ()
+        , test "motor selector button has height 2.25rem, no Auto option, no Motor: prefix, and highlights on change" <|
+            \_ ->
+                let
+                    ( initialModel, _ ) =
+                        init (freeFlags pair8x24)
+
+                    renderedInitial =
+                        Query.fromHtml (view initialModel)
+
+                    buttonInitial =
+                        renderedInitial
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "motor-selector-button") ]
+
+                    -- Initial label is "⚡ 8T" without "Auto" or "Motor: "
+                    -- Changing motor to second gear (24T)
+                    ( switched, _ ) =
+                        update (SetMotorGear (Just 1)) initialModel
+
+                    renderedSwitched =
+                        Query.fromHtml (view switched)
+
+                    buttonSwitched =
+                        renderedSwitched
+                            |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "motor-selector-button") ]
+
+                    -- After 3 seconds, highlight clears
+                    ( clearedHighlight, _ ) =
+                        update (ClearMotorHighlight switched.motorHighlightCounter) switched
+                in
+                Expect.all
+                    [ \_ -> buttonInitial |> Query.has [ Selector.style "height" "2.25rem" ]
+                    , \_ -> buttonInitial |> Query.has [ Selector.text "⚡ 8T" ]
+                    , \_ -> buttonInitial |> Query.hasNot [ Selector.text "Auto" ]
+                    , \_ -> buttonInitial |> Query.hasNot [ Selector.text "Motor:" ]
+                    , \_ -> buttonSwitched |> Query.has [ Selector.text "⚡ 24T" ]
+                    , \_ -> buttonSwitched |> Query.hasNot [ Selector.text "Auto" ]
+                    , \_ -> buttonSwitched |> Query.hasNot [ Selector.text "Motor:" ]
+                    , \_ -> buttonSwitched |> Query.has [ Selector.style "background" "var(--color-brand-yellow)" ]
+                    , \_ -> Expect.notEqual Set.empty switched.studio.selection
+                    , \_ -> Expect.equal Nothing clearedHighlight.motorHighlight
+                    , \_ -> Expect.equal Set.empty clearedHighlight.studio.selection
+                    ]
+                    ()
         , test "the open menu lists its actions, and the free dock's tabs are a horizontal row" <|
             \_ ->
                 let
@@ -1728,15 +1792,15 @@ technicTests =
             Query.fromHtml (view model)
                 |> Query.findAll
                     [ Selector.tag "button"
-                    , Selector.containing
-                        [ Selector.text
+                    , Selector.attribute
+                        (Attr.attribute "aria-label"
                             (if model.playing then
                                 I18n.headerPause model.language
 
                              else
                                 I18n.headerPlay model.language
                             )
-                        ]
+                        )
                     ]
 
         tabs model =

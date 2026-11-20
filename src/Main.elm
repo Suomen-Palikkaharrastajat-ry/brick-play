@@ -248,6 +248,8 @@ type alias Model =
     , nowMillis : Int
     , motorSpeed : Float
     , requestedMotorIndex : Maybe Int
+    , motorHighlight : Maybe Int
+    , motorHighlightCounter : Int
     , floorEnabled : Bool
     }
 
@@ -387,6 +389,7 @@ type Msg
     | ToggleMotorDirection
     | SetMotorSpeed Float
     | SetMotorGear (Maybe Int)
+    | ClearMotorHighlight Int
     | Tick Float
     | ToggleRealistic
     | ToggleFloor
@@ -896,6 +899,8 @@ init flags =
             , nowMillis = 0
             , motorSpeed = motorRpm
             , requestedMotorIndex = Nothing
+            , motorHighlight = Nothing
+            , motorHighlightCounter = 0
             , floorEnabled = True
             }
 
@@ -2047,21 +2052,83 @@ step msg model =
 
         SetMotorGear maybeGid ->
             let
+                nextCounter =
+                    model.motorHighlightCounter + 1
+
                 machine =
                     Machine.analyseMachineWithMotor maybeGid model.studio.document model.studio.viewport.partCache
+
+                maybePlacementId =
+                    maybeGid
+                        |> Maybe.andThen
+                            (\gid ->
+                                Dict.get gid (Placements.gearSources model.studio.document machine.gears)
+                            )
+
+                currentStudio =
+                    model.studio
+
+                newStudio =
+                    case maybePlacementId of
+                        Just pid ->
+                            { currentStudio | selection = Set.singleton pid }
+
+                        Nothing ->
+                            currentStudio
 
                 baseModel =
                     { model
                         | requestedMotorIndex = maybeGid
+                        , motorHighlight = maybeGid
+                        , motorHighlightCounter = nextCounter
                         , machine = machine
                         , simulation = Simulation.setRequestedMotorIndex maybeGid model.simulation
+                        , studio = newStudio
                     }
+
+                highlightCmd =
+                    Process.sleep 3000
+                        |> Task.perform (\_ -> ClearMotorHighlight nextCounter)
             in
             if model.playing then
-                ( startPlaying (stopForEdit baseModel), Cmd.none )
+                ( startPlaying (stopForEdit baseModel), highlightCmd )
 
             else
-                ( baseModel, Cmd.none )
+                ( baseModel, highlightCmd )
+
+        ClearMotorHighlight counter ->
+            if model.motorHighlightCounter == counter then
+                let
+                    clearedStudio =
+                        case model.motorHighlight of
+                            Just gid ->
+                                case Dict.get gid (Placements.gearSources model.studio.document model.machine.gears) of
+                                    Just pid ->
+                                        if model.studio.selection == Set.singleton pid then
+                                            let
+                                                s =
+                                                    model.studio
+                                            in
+                                            { s | selection = Set.empty }
+
+                                        else
+                                            model.studio
+
+                                    Nothing ->
+                                        model.studio
+
+                            Nothing ->
+                                model.studio
+                in
+                ( { model
+                    | motorHighlight = Nothing
+                    , studio = clearedStudio
+                  }
+                , Cmd.none
+                )
+
+            else
+                ( model, Cmd.none )
 
         AddPart item ->
             if remainingForItem model item <= 0 then
@@ -5738,61 +5805,6 @@ helpRows model =
 {-| Play or pause the machine. Highlighted while it runs, like the old
 simulate toggle, so the state is visible at a glance.
 -}
-playButton : I18n.Language -> Bool -> Html Msg
-playButton lang playing =
-    button
-        [ onClick TogglePlay
-        , Attr.title
-            (if playing then
-                I18n.headerPause lang ++ " (Space)"
-
-             else
-                I18n.headerPlay lang ++ " (Space)"
-            )
-        , Attr.attribute "aria-pressed"
-            (if playing then
-                "true"
-
-             else
-                "false"
-            )
-        , Attr.style "padding" "0.375rem 0.875rem"
-        , Attr.style "font-size" "0.875rem"
-        , Attr.style "font-weight" "700"
-        , Attr.style "border" "none"
-        , Attr.style "border-radius" "0.375rem"
-        , Attr.style "background"
-            (if playing then
-                "var(--color-brand-yellow)"
-
-             else
-                "rgba(255, 255, 255, 0.15)"
-            )
-        , Attr.style "color"
-            (if playing then
-                "var(--color-brand)"
-
-             else
-                "var(--color-text-on-dark)"
-            )
-        , Attr.style "cursor" "pointer"
-        , Attr.style "pointer-events" "auto"
-        , Attr.style "transition" "all 150ms ease"
-        , Attr.style "display" "flex"
-        , Attr.style "flex-shrink" "0"
-        , Attr.style "align-items" "center"
-        , Attr.style "gap" "0.375rem"
-        , Attr.style "white-space" "nowrap"
-        , Attr.class "touch-target"
-        ]
-        (if playing then
-            [ Icon.feather "pause", text (I18n.headerPause lang) ]
-
-         else
-            [ Icon.feather "play", text (I18n.headerPlay lang) ]
-        )
-
-
 technicControls : Model -> Html Msg
 technicControls model =
     div
@@ -5800,17 +5812,19 @@ technicControls model =
         , Attr.style "align-items" "center"
         , Attr.style "gap" "0.375rem"
         ]
-        [ playButton model.language model.playing
-        , motorSpeedSlider model.motorSpeed
+        [ motorControlGroup model
         , motorSelectorButton model
         ]
 
 
-motorSpeedSlider : Float -> Html Msg
-motorSpeedSlider speed =
+{-| Merged play/pause and motor speed slider control in a single compact pill.
+Play and pause use universal symbols without text labels.
+-}
+motorControlGroup : Model -> Html Msg
+motorControlGroup model =
     let
         speedInt =
-            round speed
+            round model.motorSpeed
 
         speedLabel =
             if speedInt > 0 then
@@ -5818,44 +5832,108 @@ motorSpeedSlider speed =
 
             else
                 String.fromInt speedInt
+
+        playTitle =
+            if model.playing then
+                I18n.headerPause model.language ++ " (Space)"
+
+            else
+                I18n.headerPlay model.language ++ " (Space)"
     in
     div
         [ Attr.attribute "data-testid" "motor-speed-control"
-        , Attr.title ("Moottorin nopeus: " ++ speedLabel ++ " RPM (-60 ... +60, käännä suunta R-näppäimellä)")
+        , Attr.title ("Moottorin nopeus: " ++ speedLabel ++ " RPM (-60 ... +60, käännä suunta R-näppäimellä, käynnistä välilyönnillä)")
         , Attr.style "display" "inline-flex"
         , Attr.style "align-items" "center"
-        , Attr.style "gap" "0.375rem"
         , Attr.style "height" "2.25rem"
-        , Attr.style "padding" "0 0.5rem"
-        , Attr.style "border-radius" "0.375rem"
-        , Attr.style "background" "rgba(255, 255, 255, 0.15)"
+        , Attr.style "border-radius" "0.5rem"
+        , Attr.style "background" "rgba(5, 19, 29, 0.85)"
+        , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
         , Attr.style "color" "var(--color-text-on-dark)"
         , Attr.style "font-family" "var(--font-sans)"
         , Attr.style "font-size" "0.8125rem"
         , Attr.style "font-weight" "600"
         , Attr.style "pointer-events" "auto"
+        , Attr.style "overflow" "hidden"
         ]
-        [ input
-            [ Attr.type_ "range"
-            , Attr.attribute "min" "-60"
-            , Attr.attribute "max" "60"
-            , Attr.attribute "step" "5"
-            , Attr.value (String.fromInt speedInt)
-            , onInput (\val -> SetMotorSpeed (String.toFloat val |> Maybe.withDefault 0.0))
-            , Attr.style "width" "5rem"
+        [ button
+            [ onClick TogglePlay
+            , Attr.title playTitle
+            , Attr.attribute "aria-label"
+                (if model.playing then
+                    I18n.headerPause model.language
+
+                 else
+                    I18n.headerPlay model.language
+                )
+            , Attr.attribute "aria-pressed"
+                (if model.playing then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , Attr.attribute "data-testid" "play-pause-button"
+            , Attr.style "display" "flex"
+            , Attr.style "align-items" "center"
+            , Attr.style "justify-content" "center"
+            , Attr.style "width" "2.25rem"
+            , Attr.style "height" "2.25rem"
+            , Attr.style "padding" "0"
+            , Attr.style "border" "none"
+            , Attr.style "border-right" "1px solid rgba(255, 255, 255, 0.12)"
+            , Attr.style "background"
+                (if model.playing then
+                    "var(--color-brand-yellow)"
+
+                 else
+                    "transparent"
+                )
+            , Attr.style "color"
+                (if model.playing then
+                    "var(--color-brand)"
+
+                 else
+                    "var(--color-text-on-dark)"
+                )
             , Attr.style "cursor" "pointer"
-            , Attr.style "accent-color" "var(--color-brand-yellow)"
-            , Attr.attribute "aria-label" "Moottorin nopeus"
-            , Attr.attribute "data-testid" "motor-speed-slider"
+            , Attr.style "transition" "all 150ms ease"
+            , Attr.class "touch-target"
             ]
-            []
-        , span
-            [ Attr.style "min-width" "3.5rem"
-            , Attr.style "font-variant-numeric" "tabular-nums"
-            , Attr.style "user-select" "none"
-            , Attr.attribute "data-testid" "motor-speed-label"
+            [ if model.playing then
+                Icon.featherSized 16 "pause"
+
+              else
+                Icon.featherSized 16 "play"
             ]
-            [ text (speedLabel ++ " RPM") ]
+        , div
+            [ Attr.style "display" "inline-flex"
+            , Attr.style "align-items" "center"
+            , Attr.style "gap" "0.375rem"
+            , Attr.style "padding" "0 0.5rem"
+            ]
+            [ input
+                [ Attr.type_ "range"
+                , Attr.attribute "min" "-60"
+                , Attr.attribute "max" "60"
+                , Attr.attribute "step" "5"
+                , Attr.value (String.fromInt speedInt)
+                , onInput (\val -> SetMotorSpeed (String.toFloat val |> Maybe.withDefault 0.0))
+                , Attr.style "width" "4.75rem"
+                , Attr.style "cursor" "pointer"
+                , Attr.style "accent-color" "var(--color-brand-yellow)"
+                , Attr.attribute "aria-label" "Moottorin nopeus"
+                , Attr.attribute "data-testid" "motor-speed-slider"
+                ]
+                []
+            , span
+                [ Attr.style "min-width" "3.5rem"
+                , Attr.style "font-variant-numeric" "tabular-nums"
+                , Attr.style "user-select" "none"
+                , Attr.attribute "data-testid" "motor-speed-label"
+                ]
+                [ text (speedLabel ++ " RPM") ]
+            ]
         ]
 
 
@@ -5866,83 +5944,101 @@ motorSelectorButton model =
 
     else
         let
-            label =
+            activeId =
                 case model.requestedMotorIndex of
-                    Nothing ->
-                        case model.machine.motorGearId of
-                            Just activeId ->
-                                "⚡ Auto (#" ++ String.fromInt (activeId + 1) ++ ")"
-
-                            Nothing ->
-                                "⚡ Auto"
-
                     Just reqId ->
-                        let
-                            specLabel =
-                                model.machine.gears
-                                    |> List.filter (\g -> g.id == reqId)
-                                    |> List.head
-                                    |> Maybe.map (\g -> String.fromInt g.spec.teeth ++ "T")
-                                    |> Maybe.withDefault ("#" ++ String.fromInt (reqId + 1))
-                        in
-                        "⚡ Motor: " ++ specLabel
+                        reqId
+
+                    Nothing ->
+                        model.machine.motorGearId
+                            |> Maybe.withDefault 0
+
+            specLabel =
+                model.machine.gears
+                    |> List.filter (\g -> g.id == activeId)
+                    |> List.head
+                    |> Maybe.map (\g -> String.fromInt g.spec.teeth ++ "T")
+                    |> Maybe.withDefault ("#" ++ String.fromInt (activeId + 1))
+
+            label =
+                "⚡ " ++ specLabel
 
             nextId =
-                nextMotorGear model.requestedMotorIndex model.machine.gears
+                nextMotorGear activeId model.machine.gears
+
+            isHighlighted =
+                model.motorHighlight /= Nothing
         in
         button
             [ onClick (SetMotorGear nextId)
-            , Attr.title "Select Motor Gear (click to cycle)"
-            , Attr.attribute "aria-label" "Select Motor Gear"
-            , Attr.style "padding" "0.375rem 0.625rem"
-            , Attr.style "font-size" "0.875rem"
+            , Attr.title "Valitse moottoriratas (napsauta vaihtaaksesi)"
+            , Attr.attribute "aria-label" "Valitse moottoriratas"
+            , Attr.attribute "data-testid" "motor-selector-button"
+            , Attr.style "height" "2.25rem"
+            , Attr.style "padding" "0 0.75rem"
+            , Attr.style "font-size" "0.8125rem"
             , Attr.style "font-weight" "600"
-            , Attr.style "border" "none"
-            , Attr.style "border-radius" "0.375rem"
+            , Attr.style "border" "1px solid rgba(255, 255, 255, 0.15)"
+            , Attr.style "border-radius" "0.5rem"
             , Attr.style "background"
-                (if model.requestedMotorIndex /= Nothing then
-                    "rgba(255, 193, 7, 0.3)"
+                (if isHighlighted then
+                    "var(--color-brand-yellow)"
 
                  else
-                    "rgba(255, 255, 255, 0.15)"
+                    "rgba(5, 19, 29, 0.85)"
                 )
-            , Attr.style "color" "var(--color-text-on-dark)"
+            , Attr.style "color"
+                (if isHighlighted then
+                    "var(--color-brand)"
+
+                 else
+                    "var(--color-text-on-dark)"
+                )
+            , Attr.style "box-shadow"
+                (if isHighlighted then
+                    "0 0 12px rgba(255, 193, 7, 0.7)"
+
+                 else
+                    "none"
+                )
             , Attr.style "cursor" "pointer"
             , Attr.style "pointer-events" "auto"
-            , Attr.style "display" "flex"
+            , Attr.style "display" "inline-flex"
             , Attr.style "flex-shrink" "0"
             , Attr.style "align-items" "center"
+            , Attr.style "justify-content" "center"
+            , Attr.style "transition" "all 200ms ease"
             , Attr.class "touch-target"
             ]
             [ text label ]
 
 
-nextMotorGear : Maybe Int -> List { a | id : Int } -> Maybe Int
-nextMotorGear current gears =
+nextMotorGear : Int -> List { a | id : Int } -> Maybe Int
+nextMotorGear currentId gears =
     case gears of
         [] ->
             Nothing
 
         first :: _ ->
-            case current of
-                Nothing ->
-                    Just first.id
+            let
+                findNext list =
+                    case list of
+                        [] ->
+                            Just first.id
 
-                Just currId ->
-                    let
-                        findNext list =
-                            case list of
-                                [] ->
-                                    Nothing
+                        g :: rest ->
+                            if g.id == currentId then
+                                case rest of
+                                    next :: _ ->
+                                        Just next.id
 
-                                g :: rest ->
-                                    if g.id == currId then
-                                        List.head rest |> Maybe.map .id
+                                    [] ->
+                                        Just first.id
 
-                                    else
-                                        findNext rest
-                    in
-                    findNext gears
+                            else
+                                findNext rest
+            in
+            findNext gears
 
 
 {-| Main application program.
