@@ -2336,7 +2336,7 @@ step msg model =
                         |> Maybe.map SnapshotModal.effectiveDimensions
                         |> Maybe.withDefault (SnapshotModal.qualityDimensions SnapshotModal.QualityStandard)
 
-                animation =
+                animConfig =
                     model.snapshotModal
                         |> Maybe.andThen SnapshotModal.getAnimation
 
@@ -2344,20 +2344,83 @@ step msg model =
                     model.snapshotModal
                         |> Maybe.map SnapshotModal.effectiveFilename
                         |> Maybe.withDefault "brick-play-render.png"
+
+                ( sim, anim ) =
+                    activeSimulationForAnimation model
+
+                hasTurningMotors =
+                    not (Set.isEmpty anim.gears)
+
+                viewportToUse =
+                    if hasTurningMotors then
+                        Viewport.setHiddenSources anim.sources model.studio.viewport
+
+                    else
+                        snapshotViewport model
+
+                animationWithFrames =
+                    case animConfig of
+                        Just cfg ->
+                            if hasTurningMotors then
+                                let
+                                    totalFrames =
+                                        max 1 (round (cfg.durationSeconds * toFloat cfg.fps))
+
+                                    frameTrianglesFor i =
+                                        let
+                                            t =
+                                                model.currentTime + (toFloat i * cfg.durationSeconds / toFloat totalFrames)
+
+                                            simAtT =
+                                                Simulation.setTime t sim
+                                        in
+                                        Simulation.snapshotTrianglesFor anim.gears simAtT
+
+                                    frames =
+                                        List.range 0 (totalFrames - 1)
+                                            |> List.map frameTrianglesFor
+                                in
+                                Just
+                                    { fps = cfg.fps
+                                    , durationSeconds = cfg.durationSeconds
+                                    , framesExtraTriangles = Just frames
+                                    }
+
+                            else
+                                Just
+                                    { fps = cfg.fps
+                                    , durationSeconds = cfg.durationSeconds
+                                    , framesExtraTriangles = Nothing
+                                    }
+
+                        Nothing ->
+                            Nothing
+
+                baseExtraTriangles =
+                    if hasTurningMotors then
+                        case animConfig of
+                            Just _ ->
+                                []
+
+                            Nothing ->
+                                Simulation.snapshotTrianglesFor anim.gears sim
+
+                    else
+                        snapshotTriangles model
             in
             ( { model | snapshotModal = Maybe.map (SnapshotModal.setCrop crop >> SnapshotModal.startRendering) model.snapshotModal }
             , Ports.captureRender
                 (Viewport.snapshotRequestWithOptions
                     { filename = filename
-                    , extraTriangles = snapshotTriangles model
+                    , extraTriangles = baseExtraTriangles
                     , crop = Just crop
                     , shader = shader
                     , width = Just dims.width
                     , height = Just dims.height
                     , timeBudgetMs = Just dims.timeBudgetMs
-                    , animation = animation
+                    , animation = animationWithFrames
                     }
-                    (snapshotViewport model)
+                    viewportToUse
                 )
             )
 
@@ -3147,6 +3210,45 @@ activeAnimated model =
 
     else
         Animation.none
+
+
+{-| Simulation model and animated state for animation rendering: if the machine
+is already running, reuse current simulation and animation. Otherwise analyze
+the current document and machine so motors/gears turn in snapshot animation frames.
+-}
+activeSimulationForAnimation : Model -> ( Simulation.Model, Animation.Animated )
+activeSimulationForAnimation model =
+    if not (Set.isEmpty model.animated.gears) then
+        ( model.simulation, model.animated )
+
+    else
+        let
+            prepSim =
+                model.simulation
+                    |> Simulation.setTime model.currentTime
+                    |> Simulation.setRequestedMotorIndex model.requestedMotorIndex
+                    |> Simulation.setMotorSpeed model.motorSpeed
+
+            ( simulation, _ ) =
+                Simulation.analyse
+                    { lines = Document.toLines model.studio.document
+                    , cache = model.studio.viewport.partCache
+                    }
+                    prepSim
+
+            gears =
+                simulation.gearGraph
+                    |> Maybe.map (.instances >> Array.toList)
+                    |> Maybe.withDefault []
+
+            turning =
+                Simulation.rotatingGearIds simulation
+        in
+        ( simulation
+        , Animation.rotating turning
+            (Placements.gearSources model.studio.document gears)
+            (Placements.partSources model.studio.document (Simulation.drivenPartsFor turning simulation))
+        )
 
 
 {-| The viewport model for snapshots: hides animated sources so turning gears
