@@ -1493,6 +1493,32 @@ menuTests =
             \_ ->
                 Query.fromHtml (view start)
                     |> Query.hasNot [ Selector.attribute (Attr.attribute "role" "status") ]
+        , test "speed control slider controls motor speed across -x ... 0 ... +x" <|
+            \_ ->
+                let
+                    ( initialModel, _ ) =
+                        init (freeFlags pair8x24)
+
+                    ( faster, _ ) =
+                        update (SetMotorSpeed 45.0) initialModel
+
+                    ( stopped, _ ) =
+                        update (SetMotorSpeed 0.0) faster
+
+                    ( reverse, _ ) =
+                        update (SetMotorSpeed -30.0) stopped
+
+                    ( toggled, _ ) =
+                        update ToggleMotorDirection reverse
+                in
+                Expect.all
+                    [ \_ -> Expect.equal 30.0 initialModel.motorSpeed
+                    , \_ -> Expect.equal 45.0 faster.motorSpeed
+                    , \_ -> Expect.equal 0.0 stopped.motorSpeed
+                    , \_ -> Expect.equal -30.0 reverse.motorSpeed
+                    , \_ -> Expect.equal 30.0 toggled.motorSpeed
+                    ]
+                    ()
         , test "the open menu lists its actions, and the free dock's tabs are a horizontal row" <|
             \_ ->
                 let

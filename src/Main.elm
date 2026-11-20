@@ -246,7 +246,7 @@ type alias Model =
     , participants : Dict String Participant
     , inspectedParticipant : Maybe String
     , nowMillis : Int
-    , motorDirection : Float
+    , motorSpeed : Float
     , requestedMotorIndex : Maybe Int
     , floorEnabled : Bool
     }
@@ -385,6 +385,7 @@ type Msg
     | DownloadIo
     | TogglePlay
     | ToggleMotorDirection
+    | SetMotorSpeed Float
     | SetMotorGear (Maybe Int)
     | Tick Float
     | ToggleRealistic
@@ -893,7 +894,7 @@ init flags =
             , participants = Dict.empty
             , inspectedParticipant = Nothing
             , nowMillis = 0
-            , motorDirection = 1.0
+            , motorSpeed = motorRpm
             , requestedMotorIndex = Nothing
             , floorEnabled = True
             }
@@ -1914,7 +1915,7 @@ stopForEdit model =
             model.simulation
                 |> Simulation.setTime 0
                 |> Simulation.setRequestedMotorIndex model.requestedMotorIndex
-                |> Simulation.setMotorSpeed (model.motorDirection * motorRpm)
+                |> Simulation.setMotorSpeed model.motorSpeed
         , animated = Animation.none
     }
 
@@ -1933,7 +1934,7 @@ startPlaying model =
                 model.simulation
                     |> Simulation.setTime 0
                     |> Simulation.setRequestedMotorIndex model.requestedMotorIndex
-                    |> Simulation.setMotorSpeed (model.motorDirection * motorRpm)
+                    |> Simulation.setMotorSpeed model.motorSpeed
 
             ( simulation, _ ) =
                 Simulation.analyse
@@ -2011,16 +2012,34 @@ step msg model =
 
         ToggleMotorDirection ->
             let
-                newDir =
-                    -model.motorDirection
+                newSpeed =
+                    if model.motorSpeed == 0 then
+                        motorRpm
+
+                    else
+                        -model.motorSpeed
 
                 newSim =
                     model.simulation
-                        |> Simulation.setMotorSpeed (newDir * motorRpm)
+                        |> Simulation.setMotorSpeed newSpeed
                         |> Simulation.setTime model.currentTime
             in
             ( { model
-                | motorDirection = newDir
+                | motorSpeed = newSpeed
+                , simulation = newSim
+              }
+            , Cmd.none
+            )
+
+        SetMotorSpeed speed ->
+            let
+                newSim =
+                    model.simulation
+                        |> Simulation.setMotorSpeed speed
+                        |> Simulation.setTime model.currentTime
+            in
+            ( { model
+                | motorSpeed = speed
                 , simulation = newSim
               }
             , Cmd.none
@@ -5782,38 +5801,61 @@ technicControls model =
         , Attr.style "gap" "0.375rem"
         ]
         [ playButton model.language model.playing
-        , motorDirectionButton model.motorDirection
+        , motorSpeedSlider model.motorSpeed
         , motorSelectorButton model
         ]
 
 
-motorDirectionButton : Float -> Html Msg
-motorDirectionButton direction =
-    button
-        [ onClick ToggleMotorDirection
-        , Attr.title "Reverse Motor Direction (R)"
-        , Attr.attribute "aria-label" "Reverse Motor Direction"
-        , Attr.style "padding" "0.375rem 0.625rem"
-        , Attr.style "font-size" "1rem"
-        , Attr.style "font-weight" "700"
-        , Attr.style "border" "none"
+motorSpeedSlider : Float -> Html Msg
+motorSpeedSlider speed =
+    let
+        speedInt =
+            round speed
+
+        speedLabel =
+            if speedInt > 0 then
+                "+" ++ String.fromInt speedInt
+
+            else
+                String.fromInt speedInt
+    in
+    div
+        [ Attr.attribute "data-testid" "motor-speed-control"
+        , Attr.title ("Moottorin nopeus: " ++ speedLabel ++ " RPM (-60 ... +60, käännä suunta R-näppäimellä)")
+        , Attr.style "display" "inline-flex"
+        , Attr.style "align-items" "center"
+        , Attr.style "gap" "0.375rem"
+        , Attr.style "height" "2.25rem"
+        , Attr.style "padding" "0 0.5rem"
         , Attr.style "border-radius" "0.375rem"
         , Attr.style "background" "rgba(255, 255, 255, 0.15)"
         , Attr.style "color" "var(--color-text-on-dark)"
-        , Attr.style "cursor" "pointer"
+        , Attr.style "font-family" "var(--font-sans)"
+        , Attr.style "font-size" "0.8125rem"
+        , Attr.style "font-weight" "600"
         , Attr.style "pointer-events" "auto"
-        , Attr.style "display" "flex"
-        , Attr.style "flex-shrink" "0"
-        , Attr.style "align-items" "center"
-        , Attr.class "touch-target"
         ]
-        [ text
-            (if direction >= 0 then
-                "⟳"
-
-             else
-                "⟲"
-            )
+        [ input
+            [ Attr.type_ "range"
+            , Attr.attribute "min" "-60"
+            , Attr.attribute "max" "60"
+            , Attr.attribute "step" "5"
+            , Attr.value (String.fromInt speedInt)
+            , onInput (\val -> SetMotorSpeed (String.toFloat val |> Maybe.withDefault 0.0))
+            , Attr.style "width" "5rem"
+            , Attr.style "cursor" "pointer"
+            , Attr.style "accent-color" "var(--color-brand-yellow)"
+            , Attr.attribute "aria-label" "Moottorin nopeus"
+            , Attr.attribute "data-testid" "motor-speed-slider"
+            ]
+            []
+        , span
+            [ Attr.style "min-width" "3.5rem"
+            , Attr.style "font-variant-numeric" "tabular-nums"
+            , Attr.style "user-select" "none"
+            , Attr.attribute "data-testid" "motor-speed-label"
+            ]
+            [ text (speedLabel ++ " RPM") ]
         ]
 
 
