@@ -109,11 +109,11 @@ suite =
                             , ( ( "3649.dat", 40, 50 ), SpurGear )
                             , ( ( "4716.dat", 1, 10 ), WormGear )
                             , ( ( "32905.dat", 1, 10 ), WormGear )
-                            , ( ( "69778.dat", 12, 12 ), SpurGear )
+                            , ( ( "69778.dat", 12, 15 ), SpurGear )
                             , ( ( "32198.dat", 20, 25 ), BevelGear )
                             , ( ( "32198a.dat", 20, 25 ), BevelGear )
-                            , ( ( "32269.dat", 20, 25 ), BevelGear )
-                            , ( ( "32270.dat", 12, 15 ), BevelGear )
+                            , ( ( "32269.dat", 20, 25 ), DoubleBevelGear )
+                            , ( ( "32270.dat", 12, 15 ), DoubleBevelGear )
                             , ( ( "4143.dat", 14, 17.5 ), BevelGear )
                             , ( ( "6589.dat", 12, 15 ), BevelGear )
                             , ( ( "3650.dat", 24, 30 ), CrownGear )
@@ -305,7 +305,7 @@ suite =
                 \_ ->
                     let
                         wheelFirst =
-                            { part = "69778.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 22 0) }
+                            { part = "69778.dat", color = 7, matrix = Mat4.makeTranslate (vec3 0 25 0) }
 
                         wormSecond =
                             { part = "4716.dat"
@@ -314,7 +314,7 @@ suite =
                             }
 
                         spurThird =
-                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 22 22 0) }
+                            { part = "3647.dat", color = 7, matrix = Mat4.makeTranslate (vec3 25 25 0) }
 
                         ( doc, _ ) =
                             Edit.apply (Edit.Add [ wheelFirst, wormSecond, spurThird ]) Document.empty
@@ -1138,7 +1138,7 @@ gearFeedbackTests =
                 in
                 GearFeedback.gearFeedback [ a ] doc
                     |> Expect.equal (Just { gear = "24T", other = Just "8T", relation = GearFeedback.Meshes })
-        , test "a crown gear with a parallel spur needs right angles" <|
+        , test "a crown gear meshes with a parallel spur on its rim teeth" <|
             \_ ->
                 let
                     ( doc1, crown ) =
@@ -1148,7 +1148,32 @@ gearFeedbackTests =
                         place "3647.dat" (Mat4.makeTranslate (vec3 40 0 0)) doc1
                 in
                 GearFeedback.gearFeedback [ crown ] doc
-                    |> Expect.equal (Just { gear = "24T crown", other = Just "8T", relation = GearFeedback.NotPerpendicular })
+                    |> Expect.equal (Just { gear = "24T crown", other = Just "8T", relation = GearFeedback.Meshes })
+        , test "two single bevels on parallel axles need right angles" <|
+            \_ ->
+                let
+                    ( doc1, bevel ) =
+                        place "6589.dat" Mat4.identity Document.empty
+
+                    ( doc, _ ) =
+                        place "6589.dat" (Mat4.makeTranslate (vec3 30 0 0)) doc1
+                in
+                GearFeedback.gearFeedback [ bevel ] doc
+                    |> Expect.equal (Just { gear = "12T bevel", other = Just "12T bevel", relation = GearFeedback.NotPerpendicular })
+        , test "the reported 12T + 24T layout (2 studs across, 3 plates up) meshes and turns" <|
+            \_ ->
+                let
+                    ( doc1, small ) =
+                        place "69778.dat" (Mat4.makeTranslate (vec3 -20 -46 -10)) Document.empty
+
+                    ( doc, _ ) =
+                        place "3648.dat" (Mat4.makeTranslate (vec3 20 -70 -10)) doc1
+                in
+                Expect.all
+                    [ \_ -> Expect.equal (Just GearFeedback.Meshes) (GearFeedback.gearFeedback [ small ] doc |> Maybe.map .relation)
+                    , \_ -> Expect.equal True (Machine.isAccomplished (Machine.analyseMachine doc EmbeddedParts.cache))
+                    ]
+                    ()
         , test "no feedback for a non-gear, an empty or a multiple selection" <|
             \_ ->
                 let
