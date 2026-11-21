@@ -25,6 +25,7 @@ module Main exposing
     , snapshotAnimationPlan
     , snapshotFrameStart
     , snapshotFrameTime
+    , snapshotModalMotion
     , subscriptions
     , swatchBackground
     , technicMode
@@ -2442,65 +2443,62 @@ step msg model =
                 )
 
         SnapshotRender ->
-            let
-                shader =
-                    model.snapshotModal
-                        |> Maybe.map (SnapshotModal.getShader >> SnapshotModal.shaderToString)
+            case model.snapshotModal of
+                Just rawModal ->
+                    let
+                        modal =
+                            syncModalMotion model rawModal
 
-                dims =
-                    model.snapshotModal
-                        |> Maybe.map SnapshotModal.effectiveDimensions
-                        |> Maybe.withDefault (SnapshotModal.qualityDimensions SnapshotModal.QualityStandard)
+                        shader =
+                            Just (SnapshotModal.shaderToString (SnapshotModal.getShader modal))
 
-                animConfig =
-                    model.snapshotModal
-                        |> Maybe.andThen SnapshotModal.getAnimation
+                        dims =
+                            SnapshotModal.effectiveDimensions modal
 
-                filename =
-                    model.snapshotModal
-                        |> Maybe.map SnapshotModal.effectiveFilename
-                        |> Maybe.withDefault "brick-play-render.png"
+                        animConfig =
+                            SnapshotModal.getAnimation modal
 
-                -- An animation follows `snapshotAnimationPlan`. A still draws the
-                -- gears that turn from the simulation at the current time, with
-                -- their static copies hidden.
-                ( hiddenSources, baseExtraTriangles, animation ) =
-                    case animConfig of
-                        Just cfg ->
-                            let
-                                plan =
-                                    snapshotAnimationPlan model cfg
-                            in
-                            ( plan.hiddenSources
-                            , plan.baseExtraTriangles
-                            , Just
-                                { fps = cfg.fps
-                                , durationSeconds = cfg.durationSeconds
-                                , framesExtraTriangles = plan.framesExtraTriangles
-                                }
-                            )
+                        filename =
+                            SnapshotModal.effectiveFilename modal
 
-                        Nothing ->
-                            let
-                                ( sim, anim ) =
-                                    activeSimulationForAnimation model
-                            in
-                            if Set.isEmpty anim.gears then
-                                ( (activeAnimated model).sources, snapshotTriangles model, Nothing )
+                        -- An animation follows `snapshotAnimationPlan`. A still draws the
+                        -- gears that turn from the simulation at the current time, with
+                        -- their static copies hidden.
+                        ( hiddenSources, baseExtraTriangles, animation ) =
+                            case animConfig of
+                                Just cfg ->
+                                    let
+                                        plan =
+                                            snapshotAnimationPlan model cfg
+                                    in
+                                    ( plan.hiddenSources
+                                    , plan.baseExtraTriangles
+                                    , Just
+                                        { frames = cfg.frames
+                                        , durationSeconds = cfg.durationSeconds
+                                        , samplesPerPixel = cfg.samplesPerPixel
+                                        , framesExtraTriangles = plan.framesExtraTriangles
+                                        }
+                                    )
+
+                                Nothing ->
+                                    let
+                                        ( sim, anim ) =
+                                            activeSimulationForAnimation model
+                                    in
+                                    if Set.isEmpty anim.gears then
+                                        ( (activeAnimated model).sources, snapshotTriangles model, Nothing )
+
+                                    else
+                                        ( anim.sources, Simulation.snapshotTrianglesFor anim.gears sim, Nothing )
+
+                        viewportToUse =
+                            if Set.isEmpty hiddenSources then
+                                model.studio.viewport
 
                             else
-                                ( anim.sources, Simulation.snapshotTrianglesFor anim.gears sim, Nothing )
+                                Viewport.setHiddenSources hiddenSources model.studio.viewport
 
-                viewportToUse =
-                    if Set.isEmpty hiddenSources then
-                        model.studio.viewport
-
-                    else
-                        Viewport.setHiddenSources hiddenSources model.studio.viewport
-            in
-            case model.snapshotModal of
-                Just modal ->
-                    let
                         output =
                             SnapshotModal.frameOutputSize (cameraViewSize model) modal
                     in
@@ -2524,7 +2522,21 @@ step msg model =
                     ( model, Cmd.none )
 
         SnapshotInteraction interaction ->
-            ( { model | snapshotModal = Maybe.map (SnapshotModal.handleInteraction interaction) model.snapshotModal }
+            let
+                updatedModal =
+                    model.snapshotModal
+                        |> Maybe.map (SnapshotModal.handleInteraction interaction)
+                        |> Maybe.map
+                            (\modal ->
+                                case interaction of
+                                    SnapshotModal.SelectOutputMode SnapshotModal.ModeAnimation ->
+                                        syncModalMotion model modal
+
+                                    _ ->
+                                        modal
+                            )
+            in
+            ( { model | snapshotModal = updatedModal }
             , Cmd.none
             )
 
@@ -2534,7 +2546,7 @@ step msg model =
             )
 
         SnapshotReframe ->
-            ( { model | snapshotModal = Maybe.map SnapshotModal.reframe model.snapshotModal }
+            ( { model | snapshotModal = Maybe.map (SnapshotModal.reframe >> syncModalMotion model) model.snapshotModal }
             , Cmd.none
             )
 
@@ -3320,8 +3332,8 @@ type SnapshotMotion
     motor-capable gear give `TurntableMotion`. A stopped motor (speed 0) still
     gives `MotorMotion`: its frames run at `motorRpm` (`snapshotFrameStart`).
   - `framesExtraTriangles`: for a motor, the turning gears and driven parts at
-    each of the `fps × durationSeconds` frames (`snapshotFrameTime`); `Nothing`
-    for a turntable.
+    each of the `frames` poses (`snapshotFrameTime`); `Nothing` for a
+    turntable.
   - `hiddenSources`: the placements whose static copies are hidden because
     the frames draw them (motor), or those `snapshotViewport` hides
     (turntable).
@@ -3331,7 +3343,7 @@ type SnapshotMotion
 -}
 snapshotAnimationPlan :
     Model
-    -> { a | fps : Int, durationSeconds : Float, speedMultiplier : Float }
+    -> { a | frames : Int, simulatedSeconds : Float }
     ->
         { motion : SnapshotMotion
         , framesExtraTriangles : Maybe (List (List Float))
@@ -3353,37 +3365,91 @@ snapshotAnimationPlan model cfg =
     else
         let
             totalFrames =
-                max 1 (round (cfg.durationSeconds * toFloat cfg.fps))
+                max 1 cfg.frames
 
-            ( speedOverride, startTime ) =
-                snapshotFrameStart { motorSpeed = model.motorSpeed, currentTime = model.currentTime }
-
-            simForFrames =
-                case speedOverride of
-                    Just rpm ->
-                        Simulation.setMotorSpeed rpm sim
-
-                    Nothing ->
-                        sim
+            frame =
+                snapshotFrameSimulation model sim
 
             frameTrianglesFor i =
-                let
-                    t =
-                        snapshotFrameTime
-                            { startTime = startTime
-                            , speedMultiplier = cfg.speedMultiplier
-                            , durationSeconds = cfg.durationSeconds
-                            , totalFrames = totalFrames
-                            }
-                            i
-                in
-                Simulation.snapshotTrianglesFor anim.gears (Simulation.setTime t simForFrames)
+                Simulation.snapshotTrianglesFor anim.gears
+                    (Simulation.setTime (SnapshotModal.frameTime frame.startTime cfg i) frame.simulation)
         in
         { motion = MotorMotion
         , framesExtraTriangles = Just (List.map frameTrianglesFor (List.range 0 (totalFrames - 1)))
         , hiddenSources = anim.sources
         , baseExtraTriangles = []
         }
+
+
+{-| What the snapshot modal's animation options see for the current model:
+`AnimTurntable` when no gear turns, or `AnimMotor` with the cycle time and
+speeds of the rendered motor frames (`snapshotAnimationPlan`).
+-}
+snapshotModalMotion : Model -> SnapshotModal.AnimMotion
+snapshotModalMotion model =
+    let
+        ( sim, anim ) =
+            activeSimulationForAnimation model
+    in
+    if Set.isEmpty anim.gears then
+        SnapshotModal.AnimTurntable
+
+    else
+        let
+            frame =
+                snapshotFrameSimulation model sim
+
+            motorCycle =
+                case Simulation.motionCycle anim.gears frame.simulation of
+                    Just cycle ->
+                        SnapshotModal.motorCycle frame.rpm cycle
+
+                    Nothing ->
+                        SnapshotModal.motorCycle frame.rpm { motorTurns = Nothing, maxSpeedRatio = 1 }
+        in
+        SnapshotModal.AnimMotor motorCycle
+
+
+{-| Prepare the simulation, start time, and clamped positive RPM used for
+snapshot motor frames and modal cycle calculation.
+-}
+snapshotFrameSimulation : Model -> Simulation.Model -> { simulation : Simulation.Model, startTime : Float, rpm : Float }
+snapshotFrameSimulation model sim =
+    let
+        ( speedOverride, startTime ) =
+            snapshotFrameStart { motorSpeed = model.motorSpeed, currentTime = model.currentTime }
+
+        simulation =
+            case speedOverride of
+                Just overrideRpm ->
+                    Simulation.setMotorSpeed overrideRpm sim
+
+                Nothing ->
+                    sim
+
+        rpm =
+            speedOverride
+                |> Maybe.withDefault model.motorSpeed
+                |> abs
+                |> min sim.maxRpm
+    in
+    { simulation = simulation
+    , startTime = startTime
+    , rpm = rpm
+    }
+
+
+{-| Refresh the snapshot modal's motion info when rendering or framing an
+animation so still snapshots do not trigger machine cycle analysis.
+-}
+syncModalMotion : Model -> SnapshotModal.Model -> SnapshotModal.Model
+syncModalMotion model modal =
+    case SnapshotModal.getMode modal of
+        SnapshotModal.ModeAnimation ->
+            SnapshotModal.setAnimMotion (snapshotModalMotion model) modal
+
+        SnapshotModal.ModeStill ->
+            modal
 
 
 {-| The animation kind a snapshot of the current model gets (see
@@ -3399,14 +3465,12 @@ snapshotAnimationMotion model =
 
 
 {-| Simulation time of frame `i` of a snapshot animation with `totalFrames`
-frames. The motor keeps its real speed, so frame 0 is the pose on screen
-(`startTime`), and slow motion stretches time instead: the animation covers
-`speedMultiplier * durationSeconds` seconds of simulation in
-`durationSeconds` of playback.
+frames. The animation covers `simulatedSeconds` of motor time from `startTime`,
+so frame 0 is the pose on screen and slow motion advances time more slowly.
 -}
-snapshotFrameTime : { startTime : Float, speedMultiplier : Float, durationSeconds : Float, totalFrames : Int } -> Int -> Float
+snapshotFrameTime : { startTime : Float, simulatedSeconds : Float, totalFrames : Int } -> Int -> Float
 snapshotFrameTime cfg i =
-    cfg.startTime + toFloat i * cfg.speedMultiplier * cfg.durationSeconds / toFloat (max 1 cfg.totalFrames)
+    SnapshotModal.frameTime cfg.startTime { frames = cfg.totalFrames, simulatedSeconds = cfg.simulatedSeconds } i
 
 
 {-| Where the frames of a snapshot animation start: a motor speed override

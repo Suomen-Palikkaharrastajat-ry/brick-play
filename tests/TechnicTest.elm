@@ -19,7 +19,7 @@ import I18n
 import Json.Encode as Encode
 import LDraw.Document as Document
 import LDraw.Resolve exposing (PartStatus(..))
-import Main exposing (Flags, Model, Msg(..), SnapshotMotion(..), accomplishmentBanner, init, remainingForItem, shareHash, snapshotAnimationMotion, snapshotAnimationPlan, snapshotFrameStart, snapshotFrameTime, technicMode, thumbnailRequests, update, view, viewToast)
+import Main exposing (Flags, Model, Msg(..), SnapshotMotion(..), accomplishmentBanner, init, remainingForItem, shareHash, snapshotAnimationMotion, snapshotAnimationPlan, snapshotFrameStart, snapshotFrameTime, snapshotModalMotion, technicMode, thumbnailRequests, update, view, viewToast)
 import Math.Matrix4 as Mat4
 import Math.Vector3 as Vec3 exposing (vec3)
 import Render.Camera as Camera
@@ -1496,11 +1496,11 @@ snapshotTests =
                     , \_ -> Expect.equal True (rendering.snapshotModal /= Nothing)
                     ]
                     ()
-        , test "snapshot animation frames start at the on-screen time and stretch time by the speed multiplier" <|
+        , test "snapshot animation frames start at the on-screen time and advance across simulatedSeconds" <|
             \_ ->
                 let
                     cfg =
-                        { startTime = 1.5, speedMultiplier = 0.5, durationSeconds = 2, totalFrames = 20 }
+                        { startTime = 1.5, simulatedSeconds = 1.0, totalFrames = 20 }
                 in
                 Expect.equal [ 1.5, 2.0, 2.5 ] (List.map (snapshotFrameTime cfg) [ 0, 10, 20 ])
         , test "snapshot animation frames keep the real motor speed while the motor runs" <|
@@ -1550,7 +1550,7 @@ snapshotMotionTests =
             { model | studio = { studio | viewport = { viewport | partCache = Dict.empty } } }
 
         cfg =
-            { fps = 10, durationSeconds = 2, speedMultiplier = 1 }
+            { frames = 20, simulatedSeconds = 2 }
 
         gearPlacements model =
             Document.mainPlacements model.studio.document |> List.map .id |> Set.fromList
@@ -1644,6 +1644,119 @@ snapshotMotionTests =
                     [ plan.motion == MotorMotion
                     , Maybe.map (List.all (not << List.isEmpty)) plan.framesExtraTriangles == Just True
                     ]
+        , test "snapshotModalMotion gives AnimMotor with exact cycle and speed or AnimTurntable" <|
+            \_ ->
+                let
+                    stopped =
+                        update (SetMotorSpeed 0) gearPair |> Tuple.first
+
+                    overspeed =
+                        update (SetMotorSpeed 60) gearPair |> Tuple.first
+
+                    halfSpeed =
+                        update (SetMotorSpeed -15) gearPair |> Tuple.first
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal
+                            (SnapshotModal.AnimMotor { cycleSeconds = Just 2, fastestRpm = 30, motorRpm = 30 })
+                            (snapshotModalMotion twin24)
+                    , \_ ->
+                        Expect.equal
+                            (SnapshotModal.AnimMotor { cycleSeconds = Just 6, fastestRpm = 30, motorRpm = 30 })
+                            (snapshotModalMotion gearPair)
+                    , \_ ->
+                        Expect.equal
+                            (SnapshotModal.AnimMotor { cycleSeconds = Just 6, fastestRpm = 30, motorRpm = 30 })
+                            (snapshotModalMotion stopped)
+                    , \_ ->
+                        Expect.equal
+                            (SnapshotModal.AnimMotor { cycleSeconds = Just 6, fastestRpm = 30, motorRpm = 30 })
+                            (snapshotModalMotion overspeed)
+                    , \_ ->
+                        Expect.equal
+                            (SnapshotModal.AnimMotor { cycleSeconds = Just 12, fastestRpm = 15, motorRpm = 15 })
+                            (snapshotModalMotion halfSpeed)
+                    , \_ -> Expect.equal SnapshotModal.AnimTurntable (snapshotModalMotion bricks)
+                    , \_ -> Expect.equal SnapshotModal.AnimTurntable (snapshotModalMotion gluedPair)
+                    , \_ -> Expect.equal SnapshotModal.AnimTurntable (snapshotModalMotion (withoutMeshes gearPair))
+                    ]
+                    ()
+        , test "switching to animation mode populates motor motion and renders matching frame count" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot gearPair
+
+                    ( inAnimMode, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectOutputMode SnapshotModal.ModeAnimation)) opened
+
+                    animReq =
+                        inAnimMode.snapshotModal |> Maybe.andThen SnapshotModal.getAnimation
+
+                    ( rendering, _ ) =
+                        update SnapshotRender inAnimMode
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal (Just SnapshotModal.AnimTurntable)
+                            (Maybe.map SnapshotModal.getAnimMotion opened.snapshotModal)
+                    , \_ ->
+                        Expect.equal (Just (SnapshotModal.AnimMotor { cycleSeconds = Just 6, fastestRpm = 30, motorRpm = 30 }))
+                            (Maybe.map SnapshotModal.getAnimMotion inAnimMode.snapshotModal)
+                    , \_ ->
+                        Expect.equal
+                            (Just { frames = 48, durationSeconds = 6, simulatedSeconds = 6, samplesPerPixel = Nothing })
+                            animReq
+                    , \_ ->
+                        Expect.equal (Just True) (Maybe.map SnapshotModal.isRendering rendering.snapshotModal)
+                    , \_ ->
+                        Expect.equal (Just 48)
+                            (animReq
+                                |> Maybe.andThen (\req -> (snapshotAnimationPlan inAnimMode req).framesExtraTriangles)
+                                |> Maybe.map List.length
+                            )
+                    ]
+                    ()
+        , test "a stepped-up 24T→8T train offers slow motion in Smooth mode and renders 96 slow frames" <|
+            \_ ->
+                let
+                    steppedUp =
+                        update (SetMotorGear (Just 1)) gearPair |> Tuple.first
+
+                    ( opened, _ ) =
+                        update CaptureSnapshot steppedUp
+
+                    ( inAnim, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectOutputMode SnapshotModal.ModeAnimation)) opened
+
+                    ( smooth, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectAnimSmoothness SnapshotModal.SmoothSmooth)) inAnim
+
+                    ( halfSpeed, _ ) =
+                        update (SnapshotInteraction (SnapshotModal.SelectAnimSpeed SnapshotModal.SpeedHalf)) smooth
+
+                    animReq =
+                        halfSpeed.snapshotModal |> Maybe.andThen SnapshotModal.getAnimation
+                in
+                Expect.all
+                    [ \_ ->
+                        Expect.equal (Just (SnapshotModal.AnimMotor { cycleSeconds = Just 2, fastestRpm = 90, motorRpm = 30 }))
+                            (Maybe.map SnapshotModal.getAnimMotion inAnim.snapshotModal)
+                    , \_ ->
+                        Expect.equal (Just True) (Maybe.map SnapshotModal.slowMotionOffered smooth.snapshotModal)
+                    , \_ ->
+                        Expect.equal
+                            (Just { frames = 96, durationSeconds = 4, simulatedSeconds = 2, samplesPerPixel = Nothing })
+                            animReq
+                    , \_ ->
+                        Expect.equal (Just 96)
+                            (animReq
+                                |> Maybe.andThen (\req -> (snapshotAnimationPlan halfSpeed req).framesExtraTriangles)
+                                |> Maybe.map List.length
+                            )
+                    ]
+                    ()
         ]
 
 
