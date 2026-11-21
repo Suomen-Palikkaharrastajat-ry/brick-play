@@ -6238,7 +6238,8 @@ tabLabelIn lang tab =
             I18n.categorySlopesAndTiles lang
 
         FreeCatalog.BracketsTab ->
-            I18n.categoryBracketsSnot lang
+            -- Short label so the six tabs fit the dock; same in both languages.
+            "SNOT"
 
         FreeCatalog.TechnicTab ->
             I18n.categoryTechnic lang

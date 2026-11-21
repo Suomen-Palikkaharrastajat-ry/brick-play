@@ -2675,7 +2675,8 @@ touchTests =
                             [ Query.has [ Selector.text "Palikat" ]
                             , Query.has [ Selector.text "Levyt" ]
                             , Query.has [ Selector.text "Viistot ja laatat" ]
-                            , Query.has [ Selector.text "Kulmapalat ja SNOT" ]
+                            , Query.has [ Selector.text "SNOT" ]
+                            , Query.hasNot [ Selector.text "Kulmapalat ja SNOT" ]
                             , Query.has [ Selector.text "Technic" ]
                             ]
             , test "Finnish help dialog shows Kosketusohjaimet on mobile and Pikanäppäimet on desktop" <|
