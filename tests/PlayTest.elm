@@ -2928,5 +2928,28 @@ dockPlacementTests =
                             , Query.has [ Selector.style "transform" "translateX(-50%)" ]
                             , Query.has [ Selector.style "max-width" "calc(100vw - 24rem)" ]
                             ]
+            , test "tidy does not strip turntable apart on car build" <|
+                \_ ->
+                    let
+                        carHash =
+                            "#b/fcsxEgFBEAXQ_6ebRWC2SiQSKlmbGbs7md1A5hSOQuQSHNERdDmA5FV3_f-nC7HU0pk5qWjuylFzX09NHlK9mT-Wq5OSZ4M5fVUiAlijdfFm_JCUaQUy3AmEEH7Ig6BAxsNVvRg3Mw93-7kA56efQPv6s2wE4xYLbwNf"
+
+                        ( model, _ ) =
+                            init { testFlags | initialHash = carHash }
+
+                        placements =
+                            Core.getPlacements model.studio
+
+                        turntableIds =
+                            placements
+                                |> List.filter (\p -> p.part == "3679.dat" || p.part == "3680.dat")
+                                |> List.map .id
+                                |> Set.fromList
+
+                        turntableLifted =
+                            model.tidy
+                                |> List.any (\fix -> Set.member fix.placement turntableIds)
+                    in
+                    Expect.equal False turntableLifted
             ]
         ]
