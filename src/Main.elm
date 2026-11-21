@@ -6235,10 +6235,19 @@ tabLabelIn lang tab =
             I18n.categoryPlates lang
 
         FreeCatalog.SlopesTab ->
-            I18n.categorySlopesAndTiles lang
+            -- Shorter than I18n.categorySlopes ("Viistopalikat") so the tabs fit the dock.
+            case lang of
+                Fi ->
+                    "Viistot"
+
+                En ->
+                    "Slopes"
+
+        FreeCatalog.TilesTab ->
+            I18n.categoryTiles lang
 
         FreeCatalog.BracketsTab ->
-            -- Short label so the six tabs fit the dock; same in both languages.
+            -- Short label so the tabs fit the dock; same in both languages.
             "SNOT"
 
         FreeCatalog.TechnicTab ->

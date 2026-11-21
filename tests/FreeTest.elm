@@ -370,11 +370,26 @@ freeDockTests =
                 in
                 Query.fromHtml (view model)
                     |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Plate 1 x 1 (Yellow)") ]
-        , test "the six tabs are Bricks, Plates, Slopes & tiles, Brackets & SNOT, Technic and Vehicles" <|
+        , test "the seven tabs are Bricks, Plates, Slopes, Tiles, SNOT, Technic and Vehicles" <|
             \_ ->
                 Query.fromHtml (view (open ""))
                     |> Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ]
-                    |> Query.count (Expect.equal 6)
+                    |> Query.count (Expect.equal 7)
+        , test "the Tiles tab lists tiles and the Slopes tab no longer does" <|
+            \_ ->
+                let
+                    tiles =
+                        Tuple.first (update (SetFreeTab FreeCatalog.TilesTab) (open ""))
+
+                    slopes =
+                        Tuple.first (update (SetFreeTab FreeCatalog.SlopesTab) (open ""))
+                in
+                Expect.all
+                    [ \_ -> Query.fromHtml (view tiles) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Tile 1 x 2 (Yellow)") ]
+                    , \_ -> Query.fromHtml (view slopes) |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Add Tile 1 x 2 (Yellow)") ]
+                    , \_ -> Query.fromHtml (view slopes) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Slope 45° 2 x 2 (Yellow)") ]
+                    ]
+                    ()
         , test "the Vehicles tab lists vehicle parts" <|
             \_ ->
                 let

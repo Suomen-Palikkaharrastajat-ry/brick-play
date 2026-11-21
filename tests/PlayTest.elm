@@ -2674,7 +2674,9 @@ touchTests =
                         |> Expect.all
                             [ Query.has [ Selector.text "Palikat" ]
                             , Query.has [ Selector.text "Levyt" ]
-                            , Query.has [ Selector.text "Viistot ja laatat" ]
+                            , Query.has [ Selector.text "Viistot" ]
+                            , Query.has [ Selector.text "Laatat" ]
+                            , Query.hasNot [ Selector.text "Viistot ja laatat" ]
                             , Query.has [ Selector.text "SNOT" ]
                             , Query.hasNot [ Selector.text "Kulmapalat ja SNOT" ]
                             , Query.has [ Selector.text "Technic" ]

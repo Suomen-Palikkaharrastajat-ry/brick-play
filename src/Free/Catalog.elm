@@ -36,6 +36,7 @@ type Tab
     = BricksTab
     | PlatesTab
     | SlopesTab
+    | TilesTab
     | BracketsTab
     | TechnicTab
     | VehiclesTab
@@ -45,7 +46,7 @@ type Tab
 -}
 tabs : List Tab
 tabs =
-    [ BricksTab, PlatesTab, SlopesTab, BracketsTab, TechnicTab, VehiclesTab ]
+    [ BricksTab, PlatesTab, SlopesTab, TilesTab, BracketsTab, TechnicTab, VehiclesTab ]
 
 
 {-| The label of a dock tab.
@@ -60,10 +61,13 @@ tabLabel tab =
             "Plates"
 
         SlopesTab ->
-            "Slopes & tiles"
+            "Slopes"
+
+        TilesTab ->
+            "Tiles"
 
         BracketsTab ->
-            "Brackets & SNOT"
+            "SNOT"
 
         TechnicTab ->
             "Technic"
@@ -121,7 +125,10 @@ entriesFor tab =
             , entry "3037.dat" "Slope 45° 2 x 4" "45° slope, 2 x 4"
             , entry "3298.dat" "Slope 33° 3 x 2" "33° slope, 3 x 2"
             , entry "54200.dat" "Slope 31° 1 x 1 x 2/3" "1 x 1 cheese slope"
-            , entry "3070b.dat" "Tile 1 x 1" "1 x 1 tile with groove"
+            ]
+
+        TilesTab ->
+            [ entry "3070b.dat" "Tile 1 x 1" "1 x 1 tile with groove"
             , entry "98138.dat" "Tile 1 x 1 Round" "1 x 1 round tile"
             , entry "25269.dat" "Tile 1 x 1 Round Quarter" "1 x 1 quarter round tile"
             , entry "24246.dat" "Tile 1 x 1 with Rounded End" "1 x 1 half round tile"
