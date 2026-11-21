@@ -68,10 +68,10 @@ curatedParts =
       , description = "16-tooth spur gear"
       }
     , { name = "24T Gear"
-      , file = "3648.dat"
+      , file = "3648b.dat"
       , color = 7
       , category = GearsCategory
-      , description = "24-tooth spur gear"
+      , description = "24-tooth spur gear with pin holes"
       }
     , { name = "40T Gear"
       , file = "3649.dat"
@@ -121,12 +121,6 @@ curatedParts =
       , category = GearsCategory
       , description = "LDraw name: two-toothed sliding; one thread start for ratio math"
       }
-    , { name = "24T Gear with Single Axle Hole"
-      , file = "3648b.dat"
-      , color = 7
-      , category = GearsCategory
-      , description = "24-tooth spur gear with pin holes"
-      }
     , { name = "24T Crown Gear Type 2"
       , file = "3650b.dat"
       , color = 7
@@ -174,18 +168,6 @@ curatedParts =
       , color = 7
       , category = GearsCategory
       , description = "Replacement 20-tooth bevel gear"
-      }
-    , { name = "20T Bevel Gear (Legacy Alias)"
-      , file = "32198.dat"
-      , color = 7
-      , category = GearsCategory
-      , description = "Legacy filename moved to 32198a.dat"
-      }
-    , { name = "24T Crown Gear (Legacy Alias)"
-      , file = "3650.dat"
-      , color = 7
-      , category = GearsCategory
-      , description = "Legacy filename moved to 3650c.dat"
       }
 
     -- Beams

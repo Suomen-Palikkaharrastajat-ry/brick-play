@@ -11,7 +11,7 @@ module Technic.Placement exposing
 Every Technic part in the catalog has its origin on its own axis or hole line
 (measured from the part files' bounds):
 
-  - gears (`3647` 8T, `4019` 16T, `3648` 24T, `3649` 40T): the origin is the
+  - gears (`3647` 8T, `4019` 16T, `3648b` 24T, `3649` 40T): the origin is the
     gear's centre, its axis is local Z (bounds symmetric in X/Y, ±10 in Z; the
     40T reaches 52.4 LDU from the centre)
   - axles (`3704`–`3707`): the origin is the middle of the axle, which runs

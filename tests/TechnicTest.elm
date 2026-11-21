@@ -55,9 +55,11 @@ suite =
             [ test "Gears palette covers every catalog gear and retained alias" <|
                 \_ ->
                     let
+                        -- the palette lists the current files; the engine also keeps the
+                        -- moved stubs 3648, 32198 and 3650 so old models still mesh
                         gearFiles =
-                            Catalog.partsForCategory GearsCategory
-                                |> List.map .file
+                            (Catalog.partsForCategory GearsCategory |> List.map .file)
+                                ++ [ "3648.dat", "32198.dat", "3650.dat" ]
 
                         engineGearFiles =
                             Data.gearParts |> List.map .partFile
@@ -90,6 +92,26 @@ suite =
                     Expect.all
                         [ \_ -> Expect.equal (List.sort catalogGearFiles) (List.sort engineGearFiles)
                         , \_ -> Expect.equal (List.sort engineGearFiles) (List.sort gearFiles)
+                        ]
+                        ()
+            , test "no dock entry is a hidden catalog number (whole file names)" <|
+                \_ ->
+                    let
+                        -- brick-catalog's hidden curated entries: moved stubs, legacy parts,
+                        -- and 3011, 95188 and the window glass 60601/60602
+                        hidden =
+                            [ "3023", "3040", "3070", "3069", "3068", "3648", "3062", "32198", "32556", "3650" ]
+                                ++ [ "4073", "4085", "4185", "4265c", "4275", "4276", "44301", "44302", "2412" ]
+                                ++ [ "32123", "3794b", "3011", "95188", "60601", "60602" ]
+                                |> List.map (\n -> n ++ ".dat")
+
+                        dockFiles =
+                            List.concatMap (FreeCatalog.entriesFor >> List.map .file) FreeCatalog.tabs
+                                ++ List.map .file Catalog.curatedParts
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal 25 (List.length hidden)
+                        , \_ -> Expect.equal [] (List.filter (\file -> List.member file hidden) dockFiles)
                         ]
                         ()
             , test "registered catalog tooth counts, pitch radii, and gear kinds are exact" <|
@@ -1352,7 +1374,7 @@ dockPlacementTests =
             \_ ->
                 let
                     files =
-                        [ "3648.dat", "3648.dat", "3705.dat", "32316.dat", "2780.dat", "6590.dat", "3647.dat", "3649.dat" ]
+                        [ "3648b.dat", "3648b.dat", "3705.dat", "32316.dat", "2780.dat", "6590.dat", "3647.dat", "3649.dat" ]
                 in
                 Expect.all
                     [ \_ -> Expect.equal True (noClashes files)
@@ -1818,7 +1840,7 @@ menuTests =
                         , Query.has [ Selector.text "Suomi" ]
                         , Query.has [ Selector.text "In English" ]
                         , Query.has [ Selector.text "Download BrickLink Studio (.io)" ]
-                        , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 7)
+                        , Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ] >> Query.count (Expect.equal 8)
                         , Query.hasNot [ Selector.attribute (Attr.attribute "aria-orientation" "vertical") ]
                         ]
         ]
@@ -2095,10 +2117,10 @@ technicTests =
                     , ( cleared.studio.gearAlignment, cleared.studio.dragSettles )
                     , ( start.studio.gearAlignment, start.studio.dragSettles )
                     ]
-        , test "free building's dock has seven tabs: Bricks, Plates, Slopes, Tiles, SNOT, Technic and Vehicles" <|
+        , test "free building's dock has eight tabs: Bricks, Plates, Slopes, Tiles, SNOT, Microscale, Technic and Vehicles" <|
             \_ ->
                 Expect.all
-                    [ \_ -> tabs withGears |> Query.count (Expect.equal 7)
+                    [ \_ -> tabs withGears |> Query.count (Expect.equal 8)
                     , \_ -> Query.fromHtml (view withGears) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Parts") ]
                     ]
                     ()

@@ -6250,6 +6250,15 @@ tabLabelIn lang tab =
             -- Short label so the tabs fit the dock; same in both languages.
             "SNOT"
 
+        FreeCatalog.MicroscaleTab ->
+            -- Short label so the eight tabs fit the dock.
+            case lang of
+                Fi ->
+                    "Mikro"
+
+                En ->
+                    "Micro"
+
         FreeCatalog.TechnicTab ->
             I18n.categoryTechnic lang
 

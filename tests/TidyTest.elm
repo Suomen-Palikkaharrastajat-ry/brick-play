@@ -40,25 +40,25 @@ titleTests =
         [ test "a part outside the Free catalog is named by its .dat title" <|
             \_ ->
                 freshModel
-                    |> withLines [ brick "60592.dat" 0 -48 0 ]
-                    |> update (ThumbnailLoaded { file = "60592.dat", color = 14, url = "", title = "Window 1 x 2 x 2" })
+                    |> withLines [ brick "3245c.dat" 0 -48 0 ]
+                    |> update (ThumbnailLoaded { file = "3245c.dat", color = 14, url = "", title = "Brick 1 x 2 x 2" })
                     |> Tuple.first
                     |> update OpenTidy
                     |> Tuple.first
                     |> view
                     |> Query.fromHtml
                     |> Query.find [ Selector.tag "li" ]
-                    |> Query.has [ Selector.text "Move window 1 x 2 x 2 half a stud" ]
+                    |> Query.has [ Selector.text "Move brick 1 x 2 x 2 half a stud" ]
         , test "a part with no title yet is named by its number" <|
             \_ ->
                 freshModel
-                    |> withLines [ brick "60592.dat" 0 -48 0 ]
+                    |> withLines [ brick "3245c.dat" 0 -48 0 ]
                     |> update OpenTidy
                     |> Tuple.first
                     |> view
                     |> Query.fromHtml
                     |> Query.find [ Selector.tag "li" ]
-                    |> Query.has [ Selector.text "Move part 60592 half a stud" ]
+                    |> Query.has [ Selector.text "Move part 3245c half a stud" ]
         ]
 
 

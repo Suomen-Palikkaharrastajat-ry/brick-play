@@ -9,6 +9,7 @@ import Expect
 import Free.Catalog as FreeCatalog
 import Html.Attributes as Attr
 import Json.Encode as Encode
+import LDraw.Connectivity as Connectivity
 import LDraw.Document as Document
 import LDraw.Writer as Writer
 import Link
@@ -370,11 +371,49 @@ freeDockTests =
                 in
                 Query.fromHtml (view model)
                     |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Plate 1 x 1 (Yellow)") ]
-        , test "the seven tabs are Bricks, Plates, Slopes, Tiles, SNOT, Technic and Vehicles" <|
+        , test "the eight tabs are Bricks, Plates, Slopes, Tiles, SNOT, Microscale, Technic and Vehicles" <|
             \_ ->
                 Query.fromHtml (view (open ""))
                     |> Query.findAll [ Selector.attribute (Attr.attribute "role" "tab") ]
-                    |> Query.count (Expect.equal 7)
+                    |> Query.count (Expect.equal 8)
+        , test "the Microscale tab lists microscale parts" <|
+            \_ ->
+                let
+                    model =
+                        Tuple.first (update (SetFreeTab FreeCatalog.MicroscaleTab) (open ""))
+                in
+                Expect.all
+                    [ \_ -> Query.fromHtml (view model) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Arch 1 x 3 (Yellow)") ]
+                    , \_ -> Query.fromHtml (view model) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Bar 3L (Yellow)") ]
+                    , \_ -> Query.fromHtml (view model) |> Query.hasNot [ Selector.attribute (Attr.attribute "aria-label" "Add Plant Flower (Yellow)") ]
+                    ]
+                    ()
+        , test "the Slopes tab lists inverted and curved slopes" <|
+            \_ ->
+                let
+                    model =
+                        Tuple.first (update (SetFreeTab FreeCatalog.SlopesTab) (open ""))
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view model)
+                            |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Slope Brick 45 2 x 1 Inverted with Inner Stopper Ring (Yellow)") ]
+                    , \_ -> Query.fromHtml (view model) |> Query.has [ Selector.attribute (Attr.attribute "aria-label" "Add Slope Brick Curved 4 x 1 (Yellow)") ]
+                    ]
+                    ()
+        , test "every dock entry has a hand-made connectivity entry" <|
+            \_ ->
+                FreeCatalog.tabs
+                    |> List.concatMap FreeCatalog.entriesFor
+                    |> List.filter (\e -> Connectivity.knownCatalogPart e.file == Nothing)
+                    |> List.map .file
+                    |> Expect.equal []
+        , test "the window glass 60601/60602 stays out of the dock" <|
+            \_ ->
+                FreeCatalog.tabs
+                    |> List.concatMap FreeCatalog.entriesFor
+                    |> List.filter (\e -> List.member e.file [ "60601.dat", "60602.dat" ])
+                    |> Expect.equal []
         , test "the Tiles tab lists tiles and the Slopes tab no longer does" <|
             \_ ->
                 let
