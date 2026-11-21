@@ -229,6 +229,7 @@ type alias Model =
     , toast : Maybe { message : String, id : Int }
     , toastCounter : Int
     , snapshotModal : Maybe SnapshotModal.Model
+    , savedTwoFingerOrbits : Maybe Bool
     , shareModal : Maybe ShareModal.Model
     , baseUrl : String
     , tidy : List Health.Fix
@@ -885,6 +886,7 @@ init flags =
             , toast = Nothing
             , toastCounter = 0
             , snapshotModal = Nothing
+            , savedTwoFingerOrbits = Nothing
             , shareModal = Nothing
             , baseUrl = Maybe.withDefault "https://palikkaharrastajat.fi/play/" flags.baseUrl
             , tidy = []
@@ -1211,7 +1213,7 @@ update msg model =
                 updateTidying msg model
 
             else if closesSnapshot msg model then
-                ( { model | snapshotModal = Nothing }, cancelSnapshotCmd model.snapshotModal )
+                closeSnapshot model
 
             else if cameraModal model /= Nothing && isCanvasInput msg then
                 updateCamera msg model
@@ -1404,21 +1406,12 @@ cancelSnapshotCmd modal =
             Cmd.none
 
 
-{-| The snapshot modal while it shows as the camera overlay on the live view:
-while framing the shot and while rendering it. Afterwards (the result or an
-error) it shows as a dialog.
+{-| The snapshot modal shows as an integrated camera overlay over the live view
+across every phase: framing, rendering, previewing the result, and error.
 -}
 cameraModal : Model -> Maybe SnapshotModal.Model
 cameraModal model =
     model.snapshotModal
-        |> Maybe.andThen
-            (\modal ->
-                if SnapshotModal.isFraming modal || SnapshotModal.isRendering modal then
-                    Just modal
-
-                else
-                    Nothing
-            )
 
 
 {-| Size of the 3D view in CSS pixels: it fills the window.
@@ -1502,10 +1495,21 @@ updateCamera msg model =
                     studio =
                         model.studio
 
+                    prevOrbits =
+                        studio.viewport.twoFingerOrbits
+
                     ( viewport, viewportCmd, _ ) =
-                        Viewport.update viewportMessage studio.viewport
+                        Viewport.update viewportMessage (Viewport.setTwoFingerOrbits False studio.viewport)
+
+                    restoredViewport =
+                        case model.savedTwoFingerOrbits of
+                            Just _ ->
+                                viewport
+
+                            Nothing ->
+                                Viewport.setTwoFingerOrbits prevOrbits viewport
                 in
-                ( { model | studio = { studio | viewport = viewport } }
+                ( { model | studio = { studio | viewport = restoredViewport } }
                 , Cmd.map viewportMsg viewportCmd
                 )
 
@@ -1514,6 +1518,45 @@ updateCamera msg model =
 
         _ ->
             ( model, Cmd.none )
+
+
+openSnapshot : Model -> Model
+openSnapshot model =
+    let
+        prevOrbits =
+            case model.savedTwoFingerOrbits of
+                Just prev ->
+                    Just prev
+
+                Nothing ->
+                    Just model.studio.viewport.twoFingerOrbits
+    in
+    { model
+        | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png" })
+        , savedTwoFingerOrbits = prevOrbits
+        , studio = Core.setTwoFingerOrbits False model.studio
+        , ringPart = Nothing
+    }
+
+
+closeSnapshot : Model -> ( Model, Cmd Msg )
+closeSnapshot model =
+    let
+        restoredStudio =
+            case model.savedTwoFingerOrbits of
+                Just prev ->
+                    Core.setTwoFingerOrbits prev model.studio
+
+                Nothing ->
+                    model.studio
+    in
+    ( { model
+        | snapshotModal = Nothing
+        , savedTwoFingerOrbits = Nothing
+        , studio = restoredStudio
+      }
+    , cancelSnapshotCmd model.snapshotModal
+    )
 
 
 {-| Escape closes an open snapshot modal before anything else sees the key, so
@@ -2435,12 +2478,7 @@ step msg model =
 
             else
                 -- The camera overlay frames the live view, so no preview is captured.
-                ( { model
-                    | snapshotModal = Just (SnapshotModal.initFraming { filename = "brick-play-render.png" })
-                    , ringPart = Nothing
-                  }
-                , Cmd.none
-                )
+                ( openSnapshot model, Cmd.none )
 
         SnapshotRender ->
             case model.snapshotModal of
@@ -2571,9 +2609,7 @@ step msg model =
             )
 
         SnapshotClose ->
-            ( { model | snapshotModal = Nothing }
-            , cancelSnapshotCmd model.snapshotModal
-            )
+            closeSnapshot model
 
         FitView ->
             let
@@ -4171,19 +4207,9 @@ viewNormalBuilder model =
 
             Nothing ->
                 text ""
-        , case ( cameraModal model, model.snapshotModal ) of
-            ( Just modal, _ ) ->
+        , case cameraModal model of
+            Just modal ->
                 SnapshotModal.viewCameraOverlay model.language
-                    { onClose = SnapshotClose
-                    , onStartRender = SnapshotRender
-                    , onSetAspect = SnapshotSetAspect
-                    , onInteraction = SnapshotInteraction
-                    }
-                    (cameraViewSize model)
-                    modal
-
-            ( Nothing, Just modal ) ->
-                SnapshotModal.viewFramingWithLanguage model.language
                     { onSave = SnapshotSave
                     , onClose = SnapshotClose
                     , onStartRender = SnapshotRender
@@ -4191,9 +4217,10 @@ viewNormalBuilder model =
                     , onSetAspect = SnapshotSetAspect
                     , onInteraction = SnapshotInteraction
                     }
+                    (cameraViewSize model)
                     modal
 
-            ( Nothing, Nothing ) ->
+            Nothing ->
                 text ""
         , case model.shareModal of
             Just sm ->

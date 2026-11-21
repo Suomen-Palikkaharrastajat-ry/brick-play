@@ -238,6 +238,8 @@ entriesFor tab =
             , entry "3823.dat" "Windscreen 2 x 4 x 2" "2 x 4 x 2 windscreen"
             , entry "3829c01.dat" "Car Steering Stand and Wheel" "Car steering stand and wheel"
             , entry "4079.dat" "Minifig Seat 2 x 2" "2 x 2 minifig seat"
+            , entry "3679.dat" "Turntable 2 x 2 Plate Base" "2 x 2 turntable base"
+            , entry "3680.dat" "Turntable 2 x 2 Plate Top" "2 x 2 turntable top"
             ]
 
 

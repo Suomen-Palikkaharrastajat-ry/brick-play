@@ -1712,6 +1712,130 @@ snapshotTests =
                     , \_ -> Maybe.map SnapshotModal.getQuality withQuality.snapshotModal |> Expect.equal (Just SnapshotModal.QualityHigh)
                     ]
                     ()
+        , test "camera framing uses single-finger orbit and two-finger pan/pinch-zoom, restoring twoFingerOrbits on close" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    canvas msg =
+                        StudioMsg (Core.ViewportMsg msg)
+
+                    -- Single-finger drag orbits without panning target
+                    oneFingerDragged =
+                        opened
+                            |> update (canvas (Viewport.PointerTouchStart { id = 1, x = 200, y = 200 }))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.PointerTouchMove { id = 1, x = 260, y = 230 }))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.PointerTouchEnd 1))
+                            |> Tuple.first
+
+                    -- Two-finger parallel drag pans target without orbiting azimuth
+                    twoFingerStarted =
+                        oneFingerDragged
+                            |> update (canvas (Viewport.PointerTouchStart { id = 1, x = 100, y = 100 }))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.PointerTouchStart { id = 2, x = 200, y = 100 }))
+                            |> Tuple.first
+
+                    twoFingerPanned =
+                        twoFingerStarted
+                            |> update (canvas (Viewport.PointerTouchMove { id = 1, x = 130, y = 140 }))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.PointerTouchMove { id = 2, x = 230, y = 140 }))
+                            |> Tuple.first
+
+                    -- Spreading fingers pinch-zooms
+                    twoFingerPinched =
+                        twoFingerPanned
+                            |> update (canvas (Viewport.PointerTouchMove { id = 1, x = 70, y = 140 }))
+                            |> Tuple.first
+                            |> update (canvas (Viewport.PointerTouchMove { id = 2, x = 290, y = 140 }))
+                            |> Tuple.first
+
+                    ( closedByButton, _ ) =
+                        update SnapshotClose twoFingerPinched
+
+                    ( closedByEscape, _ ) =
+                        update (pressKey "Escape") twoFingerPinched
+                in
+                Expect.all
+                    [ \_ -> selected.studio.viewport.twoFingerOrbits |> Expect.equal True
+                    , \_ -> opened.studio.viewport.twoFingerOrbits |> Expect.equal False
+                    , \_ -> Expect.greaterThan 1.0e-4 (abs (oneFingerDragged.studio.viewport.camera.azimuth - opened.studio.viewport.camera.azimuth))
+                    , \_ -> Expect.greaterThan 1.0e-4 (abs (oneFingerDragged.studio.viewport.camera.elevation - opened.studio.viewport.camera.elevation))
+                    , \_ -> Expect.within (Expect.Absolute 1.0e-6) 0 (Vec3.distance oneFingerDragged.studio.viewport.camera.target opened.studio.viewport.camera.target)
+                    , \_ -> Expect.within (Expect.Absolute 1.0e-6) twoFingerStarted.studio.viewport.camera.azimuth twoFingerPanned.studio.viewport.camera.azimuth
+                    , \_ -> Expect.greaterThan 1.0e-3 (Vec3.distance twoFingerPanned.studio.viewport.camera.target twoFingerStarted.studio.viewport.camera.target)
+                    , \_ -> Expect.greaterThan 1.0 (abs (twoFingerPinched.studio.viewport.camera.distance - twoFingerPanned.studio.viewport.camera.distance))
+                    , \_ -> closedByButton.studio.viewport.twoFingerOrbits |> Expect.equal True
+                    , \_ -> closedByEscape.studio.viewport.twoFingerOrbits |> Expect.equal True
+                    ]
+                    ()
+        , test "Preview and Failed render directly inside camera overlay instead of bulky dialog" <|
+            \_ ->
+                let
+                    ( opened, _ ) =
+                        update CaptureSnapshot selected
+
+                    ( rendering, _ ) =
+                        update SnapshotRender opened
+
+                    ( ready, _ ) =
+                        update (SnapshotReady { dataUrl = "data:image/png;base64,done", filename = "done.png" }) rendering
+
+                    ( failed, _ ) =
+                        update (SnapshotFailed "Tracer error") rendering
+
+                    ( reframed, _ ) =
+                        update SnapshotReframe ready
+
+                    ( closedFromPreview, _ ) =
+                        update SnapshotClose ready
+                in
+                Expect.all
+                    [ \_ ->
+                        Query.fromHtml (view ready)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "role" "dialog") ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-frame") ]
+                                    >> Query.has
+                                        [ Selector.tag "img"
+                                        , Selector.attribute (Attr.src "data:image/png;base64,done")
+                                        , Selector.attribute (Attr.style "object-fit" "contain")
+                                        ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-settings") ]
+                                    >> Expect.all
+                                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-format"), Selector.text "PNG" ]
+                                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "shader-preset-glossy") ]
+                                        ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-actions") ]
+                                    >> Expect.all
+                                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-save") ]
+                                        , Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-reframe") ]
+                                        ]
+                                ]
+                    , \_ ->
+                        Query.fromHtml (view failed)
+                            |> Expect.all
+                                [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera") ]
+                                , Query.hasNot [ Selector.attribute (Attr.attribute "role" "dialog") ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-frame") ]
+                                    >> Query.has [ Selector.text "Tracer error" ]
+                                , Query.find [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-actions") ]
+                                    >> Expect.all
+                                        [ Query.has [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-reframe") ]
+                                        , Query.hasNot [ Selector.attribute (Attr.attribute "data-testid" "snapshot-camera-save") ]
+                                        ]
+                                ]
+                    , \_ -> Maybe.map SnapshotModal.isFraming reframed.snapshotModal |> Expect.equal (Just True)
+                    , \_ -> reframed.studio.viewport.twoFingerOrbits |> Expect.equal False
+                    , \_ -> closedFromPreview.snapshotModal |> Expect.equal Nothing
+                    , \_ -> closedFromPreview.studio.viewport.twoFingerOrbits |> Expect.equal True
+                    ]
+                    ()
         , test "metallic swatches in palette render with metallic linear gradient" <|
             \_ ->
                 let
