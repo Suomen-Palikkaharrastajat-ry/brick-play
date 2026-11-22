@@ -201,6 +201,7 @@ entriesFor tab =
             , entry "43888.dat" "Brick 1 x 1 x 6 Round with Square Base" "1 x 1 x 6 round pillar"
             , entry "87994.dat" "Bar 3L" "3L bar"
             , entry "30374.dat" "Bar 4L Lightsaber Blade" "4L bar"
+            , entry "32828.dat" "Bar 1L with 1 x 1 Round Plate with Hollow Stud" "1L bar with round plate / cannon"
             , entry "3957a.dat" "Antenna 4H with Rounded Top" "4H antenna"
             , entry "61252.dat" "Plate 1 x 1 with Clip Horizontal (Thick C-Clip)" "1 x 1 plate with horizontal clip"
             , entry "15070.dat" "Plate 1 x 1 with Tooth Perpendicular" "1 x 1 plate with tooth"
