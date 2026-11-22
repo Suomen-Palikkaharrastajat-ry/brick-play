@@ -2000,11 +2000,11 @@ shareModalTests =
                         ShareModal.computeHash ShareModal.PartsSet model0.free model0.studio.document model0.inventory
 
                     url =
-                        ShareModal.computeUrl "https://palikkaharrastajat.fi/play/" ShareModal.PartsSet model0.free model0.studio.document model0.inventory
+                        ShareModal.computeUrl "https://rakenna.palikkaharrastajat.fi/" ShareModal.PartsSet model0.free model0.studio.document model0.inventory
                 in
                 Expect.all
                     [ \_ -> Expect.equal True (String.startsWith "#b/" hash)
-                    , \_ -> Expect.equal ("https://palikkaharrastajat.fi/play/" ++ hash) url
+                    , \_ -> Expect.equal ("https://rakenna.palikkaharrastajat.fi/" ++ hash) url
                     , \_ ->
                         Query.fromHtml (view modalOpen)
                             |> Query.find [ Selector.attribute (Attr.attribute "data-testid" "share-qr-code") ]
@@ -2018,7 +2018,7 @@ shareModalTests =
             \_ ->
                 let
                     hugeFlags =
-                        { testFlags | baseUrl = Just ("https://palikkaharrastajat.fi/play/" ++ String.repeat 3000 "x") }
+                        { testFlags | baseUrl = Just ("https://rakenna.palikkaharrastajat.fi/" ++ String.repeat 3000 "x") }
 
                     ( model0, _ ) =
                         init hugeFlags
@@ -2184,7 +2184,7 @@ shareModalTests =
                         init testFlags
 
                     baseUrl =
-                        "https://palikkaharrastajat.fi/play/"
+                        "https://rakenna.palikkaharrastajat.fi/"
 
                     roomId =
                         "7K9P2X4"
@@ -2204,15 +2204,15 @@ shareModalTests =
                 Expect.all
                     [ \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantPartsUrl)
+                            (String.startsWith "https://rakenna.palikkaharrastajat.fi/#/play/7K9P2X4/b/" participantPartsUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantFixedUrl)
+                            (String.startsWith "https://rakenna.palikkaharrastajat.fi/#/play/7K9P2X4/b/" participantFixedUrl)
                     , \_ ->
                         Expect.equal True
-                            (String.startsWith "https://palikkaharrastajat.fi/play/#/play/7K9P2X4/b/" participantFreeUrl)
+                            (String.startsWith "https://rakenna.palikkaharrastajat.fi/#/play/7K9P2X4/b/" participantFreeUrl)
                     , \_ ->
-                        Expect.equal "https://palikkaharrastajat.fi/play/#/grid/7K9P2X4" hostUrl
+                        Expect.equal "https://rakenna.palikkaharrastajat.fi/#/grid/7K9P2X4" hostUrl
                     ]
                     ()
         , test "Reverse sharing UI presence of copy-participant-url, copy-host-url, and participant QR code" <|
@@ -2499,7 +2499,7 @@ shareModalTests =
             \_ ->
                 let
                     hugeFlags =
-                        { testFlags | baseUrl = Just ("https://palikkaharrastajat.fi/play/" ++ String.repeat 3000 "x") }
+                        { testFlags | baseUrl = Just ("https://rakenna.palikkaharrastajat.fi/" ++ String.repeat 3000 "x") }
 
                     ( model0, _ ) =
                         init hugeFlags
